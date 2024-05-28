@@ -1,0 +1,15 @@
+[package]
+name = "run-template"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+dialoguer = "0.11.0"
+liquid = "0.26.4"
+liquid-core = "0.26.4"
+liquid-derive = "0.26.4"
+liquid-lib = "0.26.4"
+serde = { version = "1.0.203", features = ["derive"] }
+toml = "0.8.13"
+walkdir = "2.5.0"
+wasmtime = "21.0.1"

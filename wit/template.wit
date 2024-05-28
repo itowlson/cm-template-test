@@ -1,0 +1,49 @@
+package fermyon:spin-template@0.0.1;
+
+interface types {
+    record substitution {
+        key: string,
+        value: string,
+    }
+    variant error {
+        other(string),
+    }
+}
+
+interface template {
+    use types.{error, substitution};
+
+    variant action {
+        copy-file-substituted(tuple<string, string>),
+        copy-file-raw(tuple<string, string>),
+        write-file(tuple<string, string>),
+        write-file-binary(tuple<string, list<u8>>),
+    }
+    record execute {
+        substitutions: list<substitution>,
+        actions: list<action>,
+    }
+    run: func() -> result<execute, error>;
+}
+
+interface ui {
+    use types.{error, substitution};
+
+    prompt: func(prompt: string) -> string;
+    confirm: func(prompt: string) -> bool;
+    select: func(prompt: string, items: list<string>) -> u8;
+
+    resource file {
+        list-all: static func() -> list<file>;
+        path: func() -> string;
+        read: func() -> result<string, error>;
+        read-binary: func() -> result<list<u8>, error>;
+    }
+
+    substitute-text: func(text: string, substitutions: list<substitution>) -> result<string, error>;
+}
+
+world run-template {
+    import ui;
+    export template;
+}

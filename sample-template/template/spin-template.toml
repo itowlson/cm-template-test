@@ -1,0 +1,1 @@
+template = "../target/wasm32-unknown-unknown/release/sample_template.wasm"
