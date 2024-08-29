@@ -3,41 +3,61 @@ mod bindings;
 
 use bindings::exports::fermyon::spin_template::template::Guest;
 
+use bindings::exports::fermyon::spin_template::template::{Action, Error as TemplateError, Execute, Substitution};
+use bindings::fermyon::spin_template::ui;
+
 struct Component;
 
 impl Guest for Component {
-    fn run() -> Result<bindings::exports::fermyon::spin_template::template::Execute, bindings::exports::fermyon::spin_template::template::Error> {
+    fn run() -> Result<Execute, TemplateError> {
+        let mut actions = vec![];
 
-        let files = bindings::fermyon::spin_template::ui::File::list_all();
-        let mut lens = String::new();
-        for f in &files {
-            let len = f.path();
-            lens = format!("{len}, {lens}");
-        }
+        for file in ui::File::list_all() {
+            let path = file.path();
+
+            let action = if let Some(prefix) = file.path().strip_suffix(".raw") {
+                Action::CopyFileToRaw((file.path(), prefix.to_owned()))
+            } else if let Some(prefix) = file.path().strip_suffix(".tmpl") {
+                Action::CopyFileToSubstituted((file.path(), prefix.to_owned()))
+            } else {
+                Action::CopyFileSubstituted(path)
+            };
+
+            actions.push(action);
+        };
 
         let things = vec!["Apple".to_owned(), "Banana".to_owned()];
 
-        let src: usize = bindings::fermyon::spin_template::ui::select("What to copy", &things).into();
-        let dest = bindings::fermyon::spin_template::ui::prompt("Where to copy it");
-        let do_it = bindings::fermyon::spin_template::ui::confirm("Do it?");
+        let src: usize = ui::select("What to copy", &things).into();
+        if src == 1 {
+            let srsly = ui::confirm("A banana, really?");
+            if !srsly {
+                return Err(TemplateError::Cancel);
+            }
+        }
+
+        let http_path = ui::prompt("HTTP route"); // TODO: needs a default
+        let dest = ui::prompt("Where to write the fruit info");
+
+        let desc = ui::prompt("Description");
+
+        let do_it = ui::confirm("Do it?");
+        if !do_it {
+            return Err(TemplateError::Cancel);
+        }
 
         let substitutions = vec![
-            bindings::exports::fermyon::spin_template::template::Substitution { key: "fruit".to_owned(), value: things[src].clone() },
+            Substitution { key: "fruit".to_owned(), value: things[src].clone() },
+            Substitution { key: "project-description".to_owned(), value: desc },
+            Substitution { key: "http-path".to_owned(), value: http_path },
         ];
 
-        let fruit_info = bindings::fermyon::spin_template::ui::substitute_text("om nom nom {{ fruit }}", &substitutions).unwrap();
-        let actions = if do_it {
-            vec![
-                // TODO: probably the "from" should be File resources
-                bindings::exports::fermyon::spin_template::template::Action::CopyFileSubstituted(("fruit.txt".to_owned(), dest.clone())),
-                bindings::exports::fermyon::spin_template::template::Action::CopyFileRaw((files[0].path(), "raw_fruit.txt".to_owned())),
-                bindings::exports::fermyon::spin_template::template::Action::WriteFile(("writed.txt".to_owned(), fruit_info)),
-                bindings::exports::fermyon::spin_template::template::Action::WriteFileBinary(("binned.bin".to_owned(), vec![1,2,3,4])),
-            ]
-        } else {
-            vec![]
-        };
-        let ex = bindings::exports::fermyon::spin_template::template::Execute {
+        let fruit_info = ui::substitute_text("om nom nom {{ fruit }}", &substitutions)?;
+        actions.push(Action::WriteFile((dest, fruit_info)));
+
+        actions.push(Action::WriteFileBinary(("binned.bin".to_owned(), vec![1,2,3,4])));
+
+        let ex = Execute {
             substitutions,
             actions
         };
