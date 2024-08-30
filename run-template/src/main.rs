@@ -2,10 +2,11 @@ use std::{collections::HashMap, path::{Path, PathBuf}, sync::{Arc, RwLock}};
 
 use serde::Deserialize;
 
+mod custom_filter;
 mod filters;
 
 wasmtime::component::bindgen!({
-    path: "../wit",
+    path: "../wit/template",
     trappable_imports: ["prompt", "confirm", "select"],
     with: {
         "fermyon:spin-template/ui/file": std::path::PathBuf,
@@ -274,15 +275,16 @@ fn main() -> anyhow::Result<()> {
     let manifest: Manifest = toml::from_str(&std::fs::read_to_string(&manifest_path).unwrap()).unwrap();
     let file = tpl_dir.join(manifest.template);
 
-    let parser_builder = liquid::ParserBuilder::with_stdlib()
+    let mut parser_builder = liquid::ParserBuilder::with_stdlib()
         .filter(crate::filters::KebabCaseFilterParser)
         .filter(crate::filters::PascalCaseFilterParser)
         .filter(crate::filters::DottedPascalCaseFilterParser)
         .filter(crate::filters::SnakeCaseFilterParser)
         .filter(crate::filters::HttpWildcardFilterParser);
 
-    for (_name, _filter_path) in &manifest.filter {
-        // parser_builder.filter(something);
+    for (name, filter_path) in &manifest.filter {
+        let wasm_path = tpl_dir.join("filters").join(filter_path);
+        parser_builder = parser_builder.filter(custom_filter::CustomFilterParser::load(name, &wasm_path)?);
     }
 
     let parser = parser_builder.build()?;
@@ -315,7 +317,7 @@ fn main() -> anyhow::Result<()> {
 
     let mut store = wasmtime::Store::new(&engine, host);
 
-    let (bindings, _) = RunTemplate::instantiate(&mut store, &component, &linker).expect("should instantiated");
+    let (bindings, _instance) = RunTemplate::instantiate(&mut store, &component, &linker).expect("should instantiated");
 
     let actions = match bindings.fermyon_spin_template_template().call_run(store, execution_context) {
         Ok(Ok(actions)) => actions,

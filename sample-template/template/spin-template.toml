@@ -1,1 +1,4 @@
 template = "../target/wasm32-unknown-unknown/release/sample_template.wasm"
+
+[filter]
+spork = "sample_filter.wasm"

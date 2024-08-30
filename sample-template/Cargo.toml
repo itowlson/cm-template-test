@@ -22,7 +22,7 @@ lto = true
 default = "https://registrytest-vfztdiyy.fermyon.app"
 
 [package.metadata.component.target]
-path = "../wit"
+path = "../wit/template"
 # package = "fermyon:spin-template"
 # version = "0.0.1"
 # world = "fermyon:spin-template/run-template@0.0.1"

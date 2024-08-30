@@ -1,0 +1,9 @@
+package fermyon:spin-template-filter@0.0.1;
+
+interface types {
+    exec: func(text: string) -> result<string, string>;
+}
+
+world custom-filter {
+    export types;
+}

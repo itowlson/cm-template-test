@@ -12,10 +12,6 @@ pub mod fermyon {
             static __FORCE_SECTION_REF: fn() =
                 super::super::super::__link_custom_section_describing_imports;
             use super::super::super::_rt;
-            /// record substitution {
-            /// key: string,
-            /// value: string,
-            /// }
             #[derive(Clone)]
             pub enum Error {
                 Cancel,
@@ -780,11 +776,6 @@ pub mod exports {
                     }
                 }
                 pub trait Guest {
-                    /// record execute {
-                    /// substitutions: list<substitution>,
-                    /// actions: list<action>,
-                    /// }
-                    /// run: func() -> result<execute, error>;
                     fn run(context: ExecutionContext) -> Result<_rt::Vec<Action>, Error>;
                 }
                 #[doc(hidden)]
