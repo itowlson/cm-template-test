@@ -3,13 +3,13 @@ mod bindings;
 
 use bindings::exports::fermyon::spin_template::template::Guest;
 
-use bindings::exports::fermyon::spin_template::template::{Action, Error as TemplateError, Execute, Substitution};
+use bindings::exports::fermyon::spin_template::template::{Action, Error as TemplateError}; //, Execute, Substitution};
 use bindings::fermyon::spin_template::ui;
 
 struct Component;
 
 impl Guest for Component {
-    fn run() -> Result<Execute, TemplateError> {
+    fn run(context: bindings::exports::fermyon::spin_template::template::ExecutionContext) -> Result<Vec<Action>, TemplateError> {
         let mut actions = vec![];
 
         for file in ui::File::list_all() {
@@ -30,9 +30,9 @@ impl Guest for Component {
 
         let src: usize = ui::select("What to copy", &things).into();
         if src == 1 {
-            let srsly = ui::confirm("A banana, really?");
+            let srsly = ui::confirm("A banana? Really?");
             if !srsly {
-                return Err(TemplateError::Cancel);
+                return Ok(vec![]);
             }
         }
 
@@ -43,25 +43,19 @@ impl Guest for Component {
 
         let do_it = ui::confirm("Do it?");
         if !do_it {
-            return Err(TemplateError::Cancel);
+            return Ok(vec![]);
         }
 
-        let substitutions = vec![
-            Substitution { key: "fruit".to_owned(), value: things[src].clone() },
-            Substitution { key: "project-description".to_owned(), value: desc },
-            Substitution { key: "http-path".to_owned(), value: http_path },
-        ];
+        context.set_variable("fruit", &things[src]);
+        context.set_variable("project-description", &desc);
+        context.set_variable("http-path", &http_path);
 
-        let fruit_info = ui::substitute_text("om nom nom {{ fruit }}", &substitutions)?;
+        let fruit_info = context.evaluate_template("om nom nom {{ fruit }}")?;
         actions.push(Action::WriteFile((dest, fruit_info)));
 
         actions.push(Action::WriteFileBinary(("binned.bin".to_owned(), vec![1,2,3,4])));
 
-        let ex = Execute {
-            substitutions,
-            actions
-        };
-        Ok(ex)
+        Ok(actions)
     }
 }
 

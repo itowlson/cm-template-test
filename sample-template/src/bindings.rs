@@ -12,19 +12,10 @@ pub mod fermyon {
             static __FORCE_SECTION_REF: fn() =
                 super::super::super::__link_custom_section_describing_imports;
             use super::super::super::_rt;
-            #[derive(Clone)]
-            pub struct Substitution {
-                pub key: _rt::String,
-                pub value: _rt::String,
-            }
-            impl ::core::fmt::Debug for Substitution {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-                    f.debug_struct("Substitution")
-                        .field("key", &self.key)
-                        .field("value", &self.value)
-                        .finish()
-                }
-            }
+            /// record substitution {
+            /// key: string,
+            /// value: string,
+            /// }
             #[derive(Clone)]
             pub enum Error {
                 Cancel,
@@ -46,6 +37,148 @@ pub mod fermyon {
             }
 
             impl std::error::Error for Error {}
+
+            #[derive(Debug)]
+            #[repr(transparent)]
+            pub struct ExecutionContext {
+                handle: _rt::Resource<ExecutionContext>,
+            }
+
+            impl ExecutionContext {
+                #[doc(hidden)]
+                pub unsafe fn from_handle(handle: u32) -> Self {
+                    Self {
+                        handle: _rt::Resource::from_handle(handle),
+                    }
+                }
+
+                #[doc(hidden)]
+                pub fn take_handle(&self) -> u32 {
+                    _rt::Resource::take_handle(&self.handle)
+                }
+
+                #[doc(hidden)]
+                pub fn handle(&self) -> u32 {
+                    _rt::Resource::handle(&self.handle)
+                }
+            }
+
+            unsafe impl _rt::WasmResource for ExecutionContext {
+                #[inline]
+                unsafe fn drop(_handle: u32) {
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unreachable!();
+
+                    #[cfg(target_arch = "wasm32")]
+                    {
+                        #[link(wasm_import_module = "fermyon:spin-template/types@0.0.1")]
+                        extern "C" {
+                            #[link_name = "[resource-drop]execution-context"]
+                            fn drop(_: u32);
+                        }
+
+                        drop(_handle);
+                    }
+                }
+            }
+
+            impl ExecutionContext {
+                #[allow(unused_unsafe, clippy::all)]
+                pub fn set_variable(&self, name: &str, value: &str) {
+                    unsafe {
+                        let vec0 = name;
+                        let ptr0 = vec0.as_ptr().cast::<u8>();
+                        let len0 = vec0.len();
+                        let vec1 = value;
+                        let ptr1 = vec1.as_ptr().cast::<u8>();
+                        let len1 = vec1.len();
+
+                        #[cfg(target_arch = "wasm32")]
+                        #[link(wasm_import_module = "fermyon:spin-template/types@0.0.1")]
+                        extern "C" {
+                            #[link_name = "[method]execution-context.set-variable"]
+                            fn wit_import(_: i32, _: *mut u8, _: usize, _: *mut u8, _: usize);
+                        }
+
+                        #[cfg(not(target_arch = "wasm32"))]
+                        fn wit_import(_: i32, _: *mut u8, _: usize, _: *mut u8, _: usize) {
+                            unreachable!()
+                        }
+                        wit_import(
+                            (self).handle() as i32,
+                            ptr0.cast_mut(),
+                            len0,
+                            ptr1.cast_mut(),
+                            len1,
+                        );
+                    }
+                }
+            }
+            impl ExecutionContext {
+                #[allow(unused_unsafe, clippy::all)]
+                pub fn evaluate_template(&self, template: &str) -> Result<_rt::String, Error> {
+                    unsafe {
+                        #[repr(align(4))]
+                        struct RetArea([::core::mem::MaybeUninit<u8>; 16]);
+                        let mut ret_area = RetArea([::core::mem::MaybeUninit::uninit(); 16]);
+                        let vec0 = template;
+                        let ptr0 = vec0.as_ptr().cast::<u8>();
+                        let len0 = vec0.len();
+                        let ptr1 = ret_area.0.as_mut_ptr().cast::<u8>();
+                        #[cfg(target_arch = "wasm32")]
+                        #[link(wasm_import_module = "fermyon:spin-template/types@0.0.1")]
+                        extern "C" {
+                            #[link_name = "[method]execution-context.evaluate-template"]
+                            fn wit_import(_: i32, _: *mut u8, _: usize, _: *mut u8);
+                        }
+
+                        #[cfg(not(target_arch = "wasm32"))]
+                        fn wit_import(_: i32, _: *mut u8, _: usize, _: *mut u8) {
+                            unreachable!()
+                        }
+                        wit_import((self).handle() as i32, ptr0.cast_mut(), len0, ptr1);
+                        let l2 = i32::from(*ptr1.add(0).cast::<u8>());
+                        match l2 {
+                            0 => {
+                                let e = {
+                                    let l3 = *ptr1.add(4).cast::<*mut u8>();
+                                    let l4 = *ptr1.add(8).cast::<usize>();
+                                    let len5 = l4;
+                                    let bytes5 = _rt::Vec::from_raw_parts(l3.cast(), len5, len5);
+
+                                    _rt::string_lift(bytes5)
+                                };
+                                Ok(e)
+                            }
+                            1 => {
+                                let e = {
+                                    let l6 = i32::from(*ptr1.add(4).cast::<u8>());
+                                    let v10 = match l6 {
+                                        0 => Error::Cancel,
+                                        n => {
+                                            debug_assert_eq!(n, 1, "invalid enum discriminant");
+                                            let e10 = {
+                                                let l7 = *ptr1.add(8).cast::<*mut u8>();
+                                                let l8 = *ptr1.add(12).cast::<usize>();
+                                                let len9 = l8;
+                                                let bytes9 =
+                                                    _rt::Vec::from_raw_parts(l7.cast(), len9, len9);
+
+                                                _rt::string_lift(bytes9)
+                                            };
+                                            Error::Other(e10)
+                                        }
+                                    };
+
+                                    v10
+                                };
+                                Err(e)
+                            }
+                            _ => _rt::invalid_enum_discriminant(),
+                        }
+                    }
+                }
+            }
         }
 
         #[allow(dead_code, clippy::all)]
@@ -57,8 +190,6 @@ pub mod fermyon {
                 super::super::super::__link_custom_section_describing_imports;
             use super::super::super::_rt;
             pub type Error = super::super::super::fermyon::spin_template::types::Error;
-            pub type Substitution =
-                super::super::super::fermyon::spin_template::types::Substitution;
 
             #[derive(Debug)]
             #[repr(transparent)]
@@ -396,109 +527,6 @@ pub mod fermyon {
                     }
                 }
             }
-            #[allow(unused_unsafe, clippy::all)]
-            pub fn substitute_text(
-                text: &str,
-                substitutions: &[Substitution],
-            ) -> Result<_rt::String, Error> {
-                unsafe {
-                    #[repr(align(4))]
-                    struct RetArea([::core::mem::MaybeUninit<u8>; 16]);
-                    let mut ret_area = RetArea([::core::mem::MaybeUninit::uninit(); 16]);
-                    let vec0 = text;
-                    let ptr0 = vec0.as_ptr().cast::<u8>();
-                    let len0 = vec0.len();
-                    let vec4 = substitutions;
-                    let len4 = vec4.len();
-                    let layout4 = _rt::alloc::Layout::from_size_align_unchecked(vec4.len() * 16, 4);
-                    let result4 = if layout4.size() != 0 {
-                        let ptr = _rt::alloc::alloc(layout4).cast::<u8>();
-                        if ptr.is_null() {
-                            _rt::alloc::handle_alloc_error(layout4);
-                        }
-                        ptr
-                    } else {
-                        {
-                            ::core::ptr::null_mut()
-                        }
-                    };
-                    for (i, e) in vec4.into_iter().enumerate() {
-                        let base = result4.add(i * 16);
-                        {
-                            let super::super::super::fermyon::spin_template::types::Substitution {
-                                key: key1,
-                                value: value1,
-                            } = e;
-                            let vec2 = key1;
-                            let ptr2 = vec2.as_ptr().cast::<u8>();
-                            let len2 = vec2.len();
-                            *base.add(4).cast::<usize>() = len2;
-                            *base.add(0).cast::<*mut u8>() = ptr2.cast_mut();
-                            let vec3 = value1;
-                            let ptr3 = vec3.as_ptr().cast::<u8>();
-                            let len3 = vec3.len();
-                            *base.add(12).cast::<usize>() = len3;
-                            *base.add(8).cast::<*mut u8>() = ptr3.cast_mut();
-                        }
-                    }
-                    let ptr5 = ret_area.0.as_mut_ptr().cast::<u8>();
-                    #[cfg(target_arch = "wasm32")]
-                    #[link(wasm_import_module = "fermyon:spin-template/ui@0.0.1")]
-                    extern "C" {
-                        #[link_name = "substitute-text"]
-                        fn wit_import(_: *mut u8, _: usize, _: *mut u8, _: usize, _: *mut u8);
-                    }
-
-                    #[cfg(not(target_arch = "wasm32"))]
-                    fn wit_import(_: *mut u8, _: usize, _: *mut u8, _: usize, _: *mut u8) {
-                        unreachable!()
-                    }
-                    wit_import(ptr0.cast_mut(), len0, result4, len4, ptr5);
-                    let l6 = i32::from(*ptr5.add(0).cast::<u8>());
-                    if layout4.size() != 0 {
-                        _rt::alloc::dealloc(result4.cast(), layout4);
-                    }
-                    match l6 {
-                        0 => {
-                            let e = {
-                                let l7 = *ptr5.add(4).cast::<*mut u8>();
-                                let l8 = *ptr5.add(8).cast::<usize>();
-                                let len9 = l8;
-                                let bytes9 = _rt::Vec::from_raw_parts(l7.cast(), len9, len9);
-
-                                _rt::string_lift(bytes9)
-                            };
-                            Ok(e)
-                        }
-                        1 => {
-                            let e = {
-                                let l10 = i32::from(*ptr5.add(4).cast::<u8>());
-                                use super::super::super::fermyon::spin_template::types::Error as V14;
-                                let v14 = match l10 {
-                                    0 => V14::Cancel,
-                                    n => {
-                                        debug_assert_eq!(n, 1, "invalid enum discriminant");
-                                        let e14 = {
-                                            let l11 = *ptr5.add(8).cast::<*mut u8>();
-                                            let l12 = *ptr5.add(12).cast::<usize>();
-                                            let len13 = l12;
-                                            let bytes13 =
-                                                _rt::Vec::from_raw_parts(l11.cast(), len13, len13);
-
-                                            _rt::string_lift(bytes13)
-                                        };
-                                        V14::Other(e14)
-                                    }
-                                };
-
-                                v14
-                            };
-                            Err(e)
-                        }
-                        _ => _rt::invalid_enum_discriminant(),
-                    }
-                }
-            }
         }
     }
 }
@@ -517,8 +545,8 @@ pub mod exports {
                     super::super::super::super::__link_custom_section_describing_imports;
                 use super::super::super::super::_rt;
                 pub type Error = super::super::super::super::fermyon::spin_template::types::Error;
-                pub type Substitution =
-                    super::super::super::super::fermyon::spin_template::types::Substitution;
+                pub type ExecutionContext =
+                    super::super::super::super::fermyon::spin_template::types::ExecutionContext;
                 #[derive(Clone)]
                 pub enum Action {
                     CopyFileSubstituted(_rt::String),
@@ -550,41 +578,24 @@ pub mod exports {
                         }
                     }
                 }
-                #[derive(Clone)]
-                pub struct Execute {
-                    pub substitutions: _rt::Vec<Substitution>,
-                    pub actions: _rt::Vec<Action>,
-                }
-                impl ::core::fmt::Debug for Execute {
-                    fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-                        f.debug_struct("Execute")
-                            .field("substitutions", &self.substitutions)
-                            .field("actions", &self.actions)
-                            .finish()
-                    }
-                }
                 #[doc(hidden)]
                 #[allow(non_snake_case)]
-                pub unsafe fn _export_run_cabi<T: Guest>() -> *mut u8 {
+                pub unsafe fn _export_run_cabi<T: Guest>(arg0: i32) -> *mut u8 {
                     #[cfg(target_arch = "wasm32")]
                     _rt::run_ctors_once();
-                    let result0 = T::run();
+                    let result0 = T::run(super::super::super::super::fermyon::spin_template::types::ExecutionContext::from_handle(arg0 as u32));
                     let ptr1 = _RET_AREA.0.as_mut_ptr().cast::<u8>();
                     match result0 {
                         Ok(e) => {
                             *ptr1.add(0).cast::<u8>() = (0i32) as u8;
-                            let Execute {
-                                substitutions: substitutions2,
-                                actions: actions2,
-                            } = e;
-                            let vec6 = substitutions2;
-                            let len6 = vec6.len();
-                            let layout6 =
-                                _rt::alloc::Layout::from_size_align_unchecked(vec6.len() * 16, 4);
-                            let result6 = if layout6.size() != 0 {
-                                let ptr = _rt::alloc::alloc(layout6).cast::<u8>();
+                            let vec15 = e;
+                            let len15 = vec15.len();
+                            let layout15 =
+                                _rt::alloc::Layout::from_size_align_unchecked(vec15.len() * 20, 4);
+                            let result15 = if layout15.size() != 0 {
+                                let ptr = _rt::alloc::alloc(layout15).cast::<u8>();
                                 if ptr.is_null() {
-                                    _rt::alloc::handle_alloc_error(layout6);
+                                    _rt::alloc::handle_alloc_error(layout15);
                                 }
                                 ptr
                             } else {
@@ -592,139 +603,104 @@ pub mod exports {
                                     ::core::ptr::null_mut()
                                 }
                             };
-                            for (i, e) in vec6.into_iter().enumerate() {
-                                let base = result6.add(i * 16);
-                                {
-                                    let super::super::super::super::fermyon::spin_template::types::Substitution{ key:key3, value:value3, } = e;
-                                    let vec4 = (key3.into_bytes()).into_boxed_slice();
-                                    let ptr4 = vec4.as_ptr().cast::<u8>();
-                                    let len4 = vec4.len();
-                                    ::core::mem::forget(vec4);
-                                    *base.add(4).cast::<usize>() = len4;
-                                    *base.add(0).cast::<*mut u8>() = ptr4.cast_mut();
-                                    let vec5 = (value3.into_bytes()).into_boxed_slice();
-                                    let ptr5 = vec5.as_ptr().cast::<u8>();
-                                    let len5 = vec5.len();
-                                    ::core::mem::forget(vec5);
-                                    *base.add(12).cast::<usize>() = len5;
-                                    *base.add(8).cast::<*mut u8>() = ptr5.cast_mut();
-                                }
-                            }
-                            *ptr1.add(8).cast::<usize>() = len6;
-                            *ptr1.add(4).cast::<*mut u8>() = result6;
-                            let vec20 = actions2;
-                            let len20 = vec20.len();
-                            let layout20 =
-                                _rt::alloc::Layout::from_size_align_unchecked(vec20.len() * 20, 4);
-                            let result20 = if layout20.size() != 0 {
-                                let ptr = _rt::alloc::alloc(layout20).cast::<u8>();
-                                if ptr.is_null() {
-                                    _rt::alloc::handle_alloc_error(layout20);
-                                }
-                                ptr
-                            } else {
-                                {
-                                    ::core::ptr::null_mut()
-                                }
-                            };
-                            for (i, e) in vec20.into_iter().enumerate() {
-                                let base = result20.add(i * 20);
+                            for (i, e) in vec15.into_iter().enumerate() {
+                                let base = result15.add(i * 20);
                                 {
                                     match e {
                                         Action::CopyFileSubstituted(e) => {
                                             *base.add(0).cast::<u8>() = (0i32) as u8;
-                                            let vec7 = (e.into_bytes()).into_boxed_slice();
+                                            let vec2 = (e.into_bytes()).into_boxed_slice();
+                                            let ptr2 = vec2.as_ptr().cast::<u8>();
+                                            let len2 = vec2.len();
+                                            ::core::mem::forget(vec2);
+                                            *base.add(8).cast::<usize>() = len2;
+                                            *base.add(4).cast::<*mut u8>() = ptr2.cast_mut();
+                                        }
+                                        Action::CopyFileToSubstituted(e) => {
+                                            *base.add(0).cast::<u8>() = (1i32) as u8;
+                                            let (t3_0, t3_1) = e;
+                                            let vec4 = (t3_0.into_bytes()).into_boxed_slice();
+                                            let ptr4 = vec4.as_ptr().cast::<u8>();
+                                            let len4 = vec4.len();
+                                            ::core::mem::forget(vec4);
+                                            *base.add(8).cast::<usize>() = len4;
+                                            *base.add(4).cast::<*mut u8>() = ptr4.cast_mut();
+                                            let vec5 = (t3_1.into_bytes()).into_boxed_slice();
+                                            let ptr5 = vec5.as_ptr().cast::<u8>();
+                                            let len5 = vec5.len();
+                                            ::core::mem::forget(vec5);
+                                            *base.add(16).cast::<usize>() = len5;
+                                            *base.add(12).cast::<*mut u8>() = ptr5.cast_mut();
+                                        }
+                                        Action::CopyFileToRaw(e) => {
+                                            *base.add(0).cast::<u8>() = (2i32) as u8;
+                                            let (t6_0, t6_1) = e;
+                                            let vec7 = (t6_0.into_bytes()).into_boxed_slice();
                                             let ptr7 = vec7.as_ptr().cast::<u8>();
                                             let len7 = vec7.len();
                                             ::core::mem::forget(vec7);
                                             *base.add(8).cast::<usize>() = len7;
                                             *base.add(4).cast::<*mut u8>() = ptr7.cast_mut();
-                                        }
-                                        Action::CopyFileToSubstituted(e) => {
-                                            *base.add(0).cast::<u8>() = (1i32) as u8;
-                                            let (t8_0, t8_1) = e;
-                                            let vec9 = (t8_0.into_bytes()).into_boxed_slice();
-                                            let ptr9 = vec9.as_ptr().cast::<u8>();
-                                            let len9 = vec9.len();
-                                            ::core::mem::forget(vec9);
-                                            *base.add(8).cast::<usize>() = len9;
-                                            *base.add(4).cast::<*mut u8>() = ptr9.cast_mut();
-                                            let vec10 = (t8_1.into_bytes()).into_boxed_slice();
-                                            let ptr10 = vec10.as_ptr().cast::<u8>();
-                                            let len10 = vec10.len();
-                                            ::core::mem::forget(vec10);
-                                            *base.add(16).cast::<usize>() = len10;
-                                            *base.add(12).cast::<*mut u8>() = ptr10.cast_mut();
-                                        }
-                                        Action::CopyFileToRaw(e) => {
-                                            *base.add(0).cast::<u8>() = (2i32) as u8;
-                                            let (t11_0, t11_1) = e;
-                                            let vec12 = (t11_0.into_bytes()).into_boxed_slice();
-                                            let ptr12 = vec12.as_ptr().cast::<u8>();
-                                            let len12 = vec12.len();
-                                            ::core::mem::forget(vec12);
-                                            *base.add(8).cast::<usize>() = len12;
-                                            *base.add(4).cast::<*mut u8>() = ptr12.cast_mut();
-                                            let vec13 = (t11_1.into_bytes()).into_boxed_slice();
-                                            let ptr13 = vec13.as_ptr().cast::<u8>();
-                                            let len13 = vec13.len();
-                                            ::core::mem::forget(vec13);
-                                            *base.add(16).cast::<usize>() = len13;
-                                            *base.add(12).cast::<*mut u8>() = ptr13.cast_mut();
+                                            let vec8 = (t6_1.into_bytes()).into_boxed_slice();
+                                            let ptr8 = vec8.as_ptr().cast::<u8>();
+                                            let len8 = vec8.len();
+                                            ::core::mem::forget(vec8);
+                                            *base.add(16).cast::<usize>() = len8;
+                                            *base.add(12).cast::<*mut u8>() = ptr8.cast_mut();
                                         }
                                         Action::WriteFile(e) => {
                                             *base.add(0).cast::<u8>() = (3i32) as u8;
-                                            let (t14_0, t14_1) = e;
-                                            let vec15 = (t14_0.into_bytes()).into_boxed_slice();
-                                            let ptr15 = vec15.as_ptr().cast::<u8>();
-                                            let len15 = vec15.len();
-                                            ::core::mem::forget(vec15);
-                                            *base.add(8).cast::<usize>() = len15;
-                                            *base.add(4).cast::<*mut u8>() = ptr15.cast_mut();
-                                            let vec16 = (t14_1.into_bytes()).into_boxed_slice();
-                                            let ptr16 = vec16.as_ptr().cast::<u8>();
-                                            let len16 = vec16.len();
-                                            ::core::mem::forget(vec16);
-                                            *base.add(16).cast::<usize>() = len16;
-                                            *base.add(12).cast::<*mut u8>() = ptr16.cast_mut();
+                                            let (t9_0, t9_1) = e;
+                                            let vec10 = (t9_0.into_bytes()).into_boxed_slice();
+                                            let ptr10 = vec10.as_ptr().cast::<u8>();
+                                            let len10 = vec10.len();
+                                            ::core::mem::forget(vec10);
+                                            *base.add(8).cast::<usize>() = len10;
+                                            *base.add(4).cast::<*mut u8>() = ptr10.cast_mut();
+                                            let vec11 = (t9_1.into_bytes()).into_boxed_slice();
+                                            let ptr11 = vec11.as_ptr().cast::<u8>();
+                                            let len11 = vec11.len();
+                                            ::core::mem::forget(vec11);
+                                            *base.add(16).cast::<usize>() = len11;
+                                            *base.add(12).cast::<*mut u8>() = ptr11.cast_mut();
                                         }
                                         Action::WriteFileBinary(e) => {
                                             *base.add(0).cast::<u8>() = (4i32) as u8;
-                                            let (t17_0, t17_1) = e;
-                                            let vec18 = (t17_0.into_bytes()).into_boxed_slice();
-                                            let ptr18 = vec18.as_ptr().cast::<u8>();
-                                            let len18 = vec18.len();
-                                            ::core::mem::forget(vec18);
-                                            *base.add(8).cast::<usize>() = len18;
-                                            *base.add(4).cast::<*mut u8>() = ptr18.cast_mut();
-                                            let vec19 = (t17_1).into_boxed_slice();
-                                            let ptr19 = vec19.as_ptr().cast::<u8>();
-                                            let len19 = vec19.len();
-                                            ::core::mem::forget(vec19);
-                                            *base.add(16).cast::<usize>() = len19;
-                                            *base.add(12).cast::<*mut u8>() = ptr19.cast_mut();
+                                            let (t12_0, t12_1) = e;
+                                            let vec13 = (t12_0.into_bytes()).into_boxed_slice();
+                                            let ptr13 = vec13.as_ptr().cast::<u8>();
+                                            let len13 = vec13.len();
+                                            ::core::mem::forget(vec13);
+                                            *base.add(8).cast::<usize>() = len13;
+                                            *base.add(4).cast::<*mut u8>() = ptr13.cast_mut();
+                                            let vec14 = (t12_1).into_boxed_slice();
+                                            let ptr14 = vec14.as_ptr().cast::<u8>();
+                                            let len14 = vec14.len();
+                                            ::core::mem::forget(vec14);
+                                            *base.add(16).cast::<usize>() = len14;
+                                            *base.add(12).cast::<*mut u8>() = ptr14.cast_mut();
                                         }
                                     }
                                 }
                             }
-                            *ptr1.add(16).cast::<usize>() = len20;
-                            *ptr1.add(12).cast::<*mut u8>() = result20;
+                            *ptr1.add(8).cast::<usize>() = len15;
+                            *ptr1.add(4).cast::<*mut u8>() = result15;
                         }
                         Err(e) => {
                             *ptr1.add(0).cast::<u8>() = (1i32) as u8;
-                            use super::super::super::super::fermyon::spin_template::types::Error as V22;
+                            use super::super::super::super::fermyon::spin_template::types::Error as V17;
                             match e {
-                                V22::Cancel => {
+                                V17::Cancel => {
                                     *ptr1.add(4).cast::<u8>() = (0i32) as u8;
                                 }
-                                V22::Other(e) => {
+                                V17::Other(e) => {
                                     *ptr1.add(4).cast::<u8>() = (1i32) as u8;
-                                    let vec21 = (e.into_bytes()).into_boxed_slice();
-                                    let ptr21 = vec21.as_ptr().cast::<u8>();
-                                    let len21 = vec21.len();
-                                    ::core::mem::forget(vec21);
-                                    *ptr1.add(12).cast::<usize>() = len21;
-                                    *ptr1.add(8).cast::<*mut u8>() = ptr21.cast_mut();
+                                    let vec16 = (e.into_bytes()).into_boxed_slice();
+                                    let ptr16 = vec16.as_ptr().cast::<u8>();
+                                    let len16 = vec16.len();
+                                    ::core::mem::forget(vec16);
+                                    *ptr1.add(12).cast::<usize>() = len16;
+                                    *ptr1.add(8).cast::<*mut u8>() = ptr16.cast_mut();
                                 }
                             }
                         }
@@ -737,90 +713,79 @@ pub mod exports {
                     let l0 = i32::from(*arg0.add(0).cast::<u8>());
                     match l0 {
                         0 => {
-                            let l5 = *arg0.add(4).cast::<*mut u8>();
-                            let l6 = *arg0.add(8).cast::<usize>();
-                            let base7 = l5;
-                            let len7 = l6;
-                            for i in 0..len7 {
-                                let base = base7.add(i * 16);
+                            let l21 = *arg0.add(4).cast::<*mut u8>();
+                            let l22 = *arg0.add(8).cast::<usize>();
+                            let base23 = l21;
+                            let len23 = l22;
+                            for i in 0..len23 {
+                                let base = base23.add(i * 20);
                                 {
-                                    let l1 = *base.add(0).cast::<*mut u8>();
-                                    let l2 = *base.add(4).cast::<usize>();
-                                    _rt::cabi_dealloc(l1, l2, 1);
-                                    let l3 = *base.add(8).cast::<*mut u8>();
-                                    let l4 = *base.add(12).cast::<usize>();
-                                    _rt::cabi_dealloc(l3, l4, 1);
-                                }
-                            }
-                            _rt::cabi_dealloc(base7, len7 * 16, 4);
-                            let l28 = *arg0.add(12).cast::<*mut u8>();
-                            let l29 = *arg0.add(16).cast::<usize>();
-                            let base30 = l28;
-                            let len30 = l29;
-                            for i in 0..len30 {
-                                let base = base30.add(i * 20);
-                                {
-                                    let l8 = i32::from(*base.add(0).cast::<u8>());
-                                    match l8 {
+                                    let l1 = i32::from(*base.add(0).cast::<u8>());
+                                    match l1 {
                                         0 => {
-                                            let l9 = *base.add(4).cast::<*mut u8>();
-                                            let l10 = *base.add(8).cast::<usize>();
-                                            _rt::cabi_dealloc(l9, l10, 1);
+                                            let l2 = *base.add(4).cast::<*mut u8>();
+                                            let l3 = *base.add(8).cast::<usize>();
+                                            _rt::cabi_dealloc(l2, l3, 1);
                                         }
                                         1 => {
-                                            let l11 = *base.add(4).cast::<*mut u8>();
-                                            let l12 = *base.add(8).cast::<usize>();
-                                            _rt::cabi_dealloc(l11, l12, 1);
-                                            let l13 = *base.add(12).cast::<*mut u8>();
-                                            let l14 = *base.add(16).cast::<usize>();
-                                            _rt::cabi_dealloc(l13, l14, 1);
+                                            let l4 = *base.add(4).cast::<*mut u8>();
+                                            let l5 = *base.add(8).cast::<usize>();
+                                            _rt::cabi_dealloc(l4, l5, 1);
+                                            let l6 = *base.add(12).cast::<*mut u8>();
+                                            let l7 = *base.add(16).cast::<usize>();
+                                            _rt::cabi_dealloc(l6, l7, 1);
                                         }
                                         2 => {
-                                            let l15 = *base.add(4).cast::<*mut u8>();
-                                            let l16 = *base.add(8).cast::<usize>();
-                                            _rt::cabi_dealloc(l15, l16, 1);
-                                            let l17 = *base.add(12).cast::<*mut u8>();
-                                            let l18 = *base.add(16).cast::<usize>();
-                                            _rt::cabi_dealloc(l17, l18, 1);
+                                            let l8 = *base.add(4).cast::<*mut u8>();
+                                            let l9 = *base.add(8).cast::<usize>();
+                                            _rt::cabi_dealloc(l8, l9, 1);
+                                            let l10 = *base.add(12).cast::<*mut u8>();
+                                            let l11 = *base.add(16).cast::<usize>();
+                                            _rt::cabi_dealloc(l10, l11, 1);
                                         }
                                         3 => {
-                                            let l19 = *base.add(4).cast::<*mut u8>();
-                                            let l20 = *base.add(8).cast::<usize>();
-                                            _rt::cabi_dealloc(l19, l20, 1);
-                                            let l21 = *base.add(12).cast::<*mut u8>();
-                                            let l22 = *base.add(16).cast::<usize>();
-                                            _rt::cabi_dealloc(l21, l22, 1);
+                                            let l12 = *base.add(4).cast::<*mut u8>();
+                                            let l13 = *base.add(8).cast::<usize>();
+                                            _rt::cabi_dealloc(l12, l13, 1);
+                                            let l14 = *base.add(12).cast::<*mut u8>();
+                                            let l15 = *base.add(16).cast::<usize>();
+                                            _rt::cabi_dealloc(l14, l15, 1);
                                         }
                                         _ => {
-                                            let l23 = *base.add(4).cast::<*mut u8>();
-                                            let l24 = *base.add(8).cast::<usize>();
-                                            _rt::cabi_dealloc(l23, l24, 1);
-                                            let l25 = *base.add(12).cast::<*mut u8>();
-                                            let l26 = *base.add(16).cast::<usize>();
-                                            let base27 = l25;
-                                            let len27 = l26;
-                                            _rt::cabi_dealloc(base27, len27 * 1, 1);
+                                            let l16 = *base.add(4).cast::<*mut u8>();
+                                            let l17 = *base.add(8).cast::<usize>();
+                                            _rt::cabi_dealloc(l16, l17, 1);
+                                            let l18 = *base.add(12).cast::<*mut u8>();
+                                            let l19 = *base.add(16).cast::<usize>();
+                                            let base20 = l18;
+                                            let len20 = l19;
+                                            _rt::cabi_dealloc(base20, len20 * 1, 1);
                                         }
                                     }
                                 }
                             }
-                            _rt::cabi_dealloc(base30, len30 * 20, 4);
+                            _rt::cabi_dealloc(base23, len23 * 20, 4);
                         }
                         _ => {
-                            let l31 = i32::from(*arg0.add(4).cast::<u8>());
-                            match l31 {
+                            let l24 = i32::from(*arg0.add(4).cast::<u8>());
+                            match l24 {
                                 0 => (),
                                 _ => {
-                                    let l32 = *arg0.add(8).cast::<*mut u8>();
-                                    let l33 = *arg0.add(12).cast::<usize>();
-                                    _rt::cabi_dealloc(l32, l33, 1);
+                                    let l25 = *arg0.add(8).cast::<*mut u8>();
+                                    let l26 = *arg0.add(12).cast::<usize>();
+                                    _rt::cabi_dealloc(l25, l26, 1);
                                 }
                             }
                         }
                     }
                 }
                 pub trait Guest {
-                    fn run() -> Result<Execute, Error>;
+                    /// record execute {
+                    /// substitutions: list<substitution>,
+                    /// actions: list<action>,
+                    /// }
+                    /// run: func() -> result<execute, error>;
+                    fn run(context: ExecutionContext) -> Result<_rt::Vec<Action>, Error>;
                 }
                 #[doc(hidden)]
 
@@ -828,8 +793,8 @@ pub mod exports {
         ($ty:ident with_types_in $($path_to_types:tt)*) => (const _: () = {
 
           #[export_name = "fermyon:spin-template/template@0.0.1#run"]
-          unsafe extern "C" fn export_run() -> *mut u8 {
-            $($path_to_types)*::_export_run_cabi::<$ty>()
+          unsafe extern "C" fn export_run(arg0: i32,) -> *mut u8 {
+            $($path_to_types)*::_export_run_cabi::<$ty>(arg0)
           }
           #[export_name = "cabi_post_fermyon:spin-template/template@0.0.1#run"]
           unsafe extern "C" fn _post_return_run(arg0: *mut u8,) {
@@ -840,8 +805,8 @@ pub mod exports {
                 #[doc(hidden)]
                 pub(crate) use __export_fermyon_spin_template_template_0_0_1_cabi;
                 #[repr(align(4))]
-                struct _RetArea([::core::mem::MaybeUninit<u8>; 20]);
-                static mut _RET_AREA: _RetArea = _RetArea([::core::mem::MaybeUninit::uninit(); 20]);
+                struct _RetArea([::core::mem::MaybeUninit<u8>; 16]);
+                static mut _RET_AREA: _RetArea = _RetArea([::core::mem::MaybeUninit::uninit(); 16]);
             }
         }
     }
@@ -951,6 +916,13 @@ mod _rt {
             String::from_utf8_unchecked(bytes)
         }
     }
+    pub unsafe fn invalid_enum_discriminant<T>() -> T {
+        if cfg!(debug_assertions) {
+            panic!("invalid enum discriminant")
+        } else {
+            core::hint::unreachable_unchecked()
+        }
+    }
     pub unsafe fn bool_lift(val: u8) -> bool {
         if cfg!(debug_assertions) {
             match val {
@@ -969,13 +941,6 @@ mod _rt {
         }
         let layout = alloc::Layout::from_size_align_unchecked(size, align);
         alloc::dealloc(ptr as *mut u8, layout);
-    }
-    pub unsafe fn invalid_enum_discriminant<T>() -> T {
-        if cfg!(debug_assertions) {
-            panic!("invalid enum discriminant")
-        } else {
-            core::hint::unreachable_unchecked()
-        }
     }
 
     #[cfg(target_arch = "wasm32")]
@@ -1016,29 +981,30 @@ pub(crate) use __export_run_template_impl as export;
 #[cfg(target_arch = "wasm32")]
 #[link_section = "component-type:wit-bindgen:0.25.0:run-template:encoded world"]
 #[doc(hidden)]
-pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 978] = *b"\
-\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xcf\x06\x01A\x02\x01\
-A\x08\x01B\x04\x01r\x02\x03keys\x05values\x04\0\x0csubstitution\x03\0\0\x01q\x02\
-\x06cancel\0\0\x05other\x01s\0\x04\0\x05error\x03\0\x02\x03\x01!fermyon:spin-tem\
-plate/types@0.0.1\x05\0\x02\x03\0\0\x05error\x02\x03\0\0\x0csubstitution\x01B\x1d\
-\x02\x03\x02\x01\x01\x04\0\x05error\x03\0\0\x02\x03\x02\x01\x02\x04\0\x0csubstit\
-ution\x03\0\x02\x04\0\x04file\x03\x01\x01i\x04\x01p\x05\x01@\0\0\x06\x04\0\x15[s\
-tatic]file.list-all\x01\x07\x01h\x04\x01@\x01\x04self\x08\0s\x04\0\x11[method]fi\
-le.path\x01\x09\x01j\x01s\x01\x01\x01@\x01\x04self\x08\0\x0a\x04\0\x11[method]fi\
-le.read\x01\x0b\x01p}\x01j\x01\x0c\x01\x01\x01@\x01\x04self\x08\0\x0d\x04\0\x18[\
-method]file.read-binary\x01\x0e\x01@\x01\x06prompts\0s\x04\0\x06prompt\x01\x0f\x01\
-@\x01\x06prompts\0\x7f\x04\0\x07confirm\x01\x10\x01ps\x01@\x02\x06prompts\x05ite\
-ms\x11\0}\x04\0\x06select\x01\x12\x01p\x03\x01@\x02\x04texts\x0dsubstitutions\x13\
-\0\x0a\x04\0\x0fsubstitute-text\x01\x14\x03\x01\x1efermyon:spin-template/ui@0.0.\
-1\x05\x03\x01B\x10\x02\x03\x02\x01\x01\x04\0\x05error\x03\0\0\x02\x03\x02\x01\x02\
-\x04\0\x0csubstitution\x03\0\x02\x01o\x02ss\x01p}\x01o\x02s\x05\x01q\x05\x15copy\
--file-substituted\x01s\0\x18copy-file-to-substituted\x01\x04\0\x10copy-file-to-r\
-aw\x01\x04\0\x0awrite-file\x01\x04\0\x11write-file-binary\x01\x06\0\x04\0\x06act\
-ion\x03\0\x07\x01p\x03\x01p\x08\x01r\x02\x0dsubstitutions\x09\x07actions\x0a\x04\
-\0\x07execute\x03\0\x0b\x01j\x01\x0c\x01\x01\x01@\0\0\x0d\x04\0\x03run\x01\x0e\x04\
-\x01$fermyon:spin-template/template@0.0.1\x05\x04\x04\x01(fermyon:spin-template/\
-run-template@0.0.1\x04\0\x0b\x12\x01\0\x0crun-template\x03\0\0\0G\x09producers\x01\
-\x0cprocessed-by\x02\x0dwit-component\x070.208.1\x10wit-bindgen-rust\x060.25.0";
+pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 1019] = *b"\
+\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xf8\x06\x01A\x02\x01\
+A\x08\x01B\x09\x01q\x02\x06cancel\0\0\x05other\x01s\0\x04\0\x05error\x03\0\0\x04\
+\0\x11execution-context\x03\x01\x01h\x02\x01@\x03\x04self\x03\x04names\x05values\
+\x01\0\x04\0&[method]execution-context.set-variable\x01\x04\x01j\x01s\x01\x01\x01\
+@\x02\x04self\x03\x08templates\0\x05\x04\0+[method]execution-context.evaluate-te\
+mplate\x01\x06\x03\x01!fermyon:spin-template/types@0.0.1\x05\0\x02\x03\0\0\x05er\
+ror\x01B\x18\x02\x03\x02\x01\x01\x04\0\x05error\x03\0\0\x04\0\x04file\x03\x01\x01\
+i\x02\x01p\x03\x01@\0\0\x04\x04\0\x15[static]file.list-all\x01\x05\x01h\x02\x01@\
+\x01\x04self\x06\0s\x04\0\x11[method]file.path\x01\x07\x01j\x01s\x01\x01\x01@\x01\
+\x04self\x06\0\x08\x04\0\x11[method]file.read\x01\x09\x01p}\x01j\x01\x0a\x01\x01\
+\x01@\x01\x04self\x06\0\x0b\x04\0\x18[method]file.read-binary\x01\x0c\x01@\x01\x06\
+prompts\0s\x04\0\x06prompt\x01\x0d\x01@\x01\x06prompts\0\x7f\x04\0\x07confirm\x01\
+\x0e\x01ps\x01@\x02\x06prompts\x05items\x0f\0}\x04\0\x06select\x01\x10\x03\x01\x1e\
+fermyon:spin-template/ui@0.0.1\x05\x02\x02\x03\0\0\x11execution-context\x01B\x0e\
+\x02\x03\x02\x01\x01\x04\0\x05error\x03\0\0\x02\x03\x02\x01\x03\x04\0\x11executi\
+on-context\x03\0\x02\x01o\x02ss\x01p}\x01o\x02s\x05\x01q\x05\x15copy-file-substi\
+tuted\x01s\0\x18copy-file-to-substituted\x01\x04\0\x10copy-file-to-raw\x01\x04\0\
+\x0awrite-file\x01\x04\0\x11write-file-binary\x01\x06\0\x04\0\x06action\x03\0\x07\
+\x01i\x03\x01p\x08\x01j\x01\x0a\x01\x01\x01@\x01\x07context\x09\0\x0b\x04\0\x03r\
+un\x01\x0c\x04\x01$fermyon:spin-template/template@0.0.1\x05\x04\x04\x01(fermyon:\
+spin-template/run-template@0.0.1\x04\0\x0b\x12\x01\0\x0crun-template\x03\0\0\0G\x09\
+producers\x01\x0cprocessed-by\x02\x0dwit-component\x070.208.1\x10wit-bindgen-rus\
+t\x060.25.0";
 
 #[inline(never)]
 #[doc(hidden)]

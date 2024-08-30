@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::{collections::HashMap, path::{Path, PathBuf}, sync::{Arc, RwLock}};
 
 use serde::Deserialize;
 
@@ -9,12 +9,14 @@ wasmtime::component::bindgen!({
     trappable_imports: ["prompt", "confirm", "select"],
     with: {
         "fermyon:spin-template/ui/file": std::path::PathBuf,
+        "fermyon:spin-template/types/execution-context": ExecutionContext,
     }
 });
 
 struct Host {
     content_root: PathBuf,
     files: wasmtime::component::ResourceTable,
+    execution_contexts: wasmtime::component::ResourceTable,
 }
 
 #[derive(Debug)]
@@ -54,11 +56,79 @@ impl Host {
         Self {
             content_root: root_dir.as_ref().to_owned(),
             files: wasmtime::component::ResourceTable::new(),
+            execution_contexts: wasmtime::component::ResourceTable::new(),
         }
     }
 }
 
+#[derive(Clone)]
+pub struct ExecutionContext {
+    inner: Arc<RwLock<ExecutionContextInner>>,
+}
+
+struct ExecutionContextInner {
+    variables: HashMap<String, String>,
+    parser: liquid::Parser,
+}
+
+impl ExecutionContext {
+    fn new(variables: HashMap<String, String>, parser: liquid::Parser) -> Self {
+        Self {
+            inner: Arc::new(RwLock::new(ExecutionContextInner::new(variables, parser))),
+        }
+    }
+
+    fn evaluate_template(&self, template: &str) -> anyhow::Result<String> {
+        self.inner.read().unwrap().evaluate_template(template)
+    }
+}
+
+impl ExecutionContextInner {
+    fn new(variables: HashMap<String, String>, parser: liquid::Parser) -> Self {
+        Self {
+            variables,
+            parser,
+        }
+    }
+
+    fn evaluate_template(&self, template: &str) -> anyhow::Result<String> {
+        let template = self.parser.parse(template)?;
+        
+        let mut object = liquid::Object::new();
+
+        for (name, value) in &self.variables {
+            object.insert(
+                name.to_owned().into(),
+                liquid_core::Value::Scalar(value.to_owned().into()),
+            );
+        }
+    
+        let res = template.render(&object).unwrap();
+        Ok(res)
+    
+    }
+}
+
 impl fermyon::spin_template::types::Host for Host {}  // y tho
+
+impl fermyon::spin_template::types::HostExecutionContext for Host {
+    fn set_variable(&mut self, self_: wasmtime::component::Resource<fermyon::spin_template::types::ExecutionContext>, name: String, value: String) {
+        let context = self.execution_contexts.get_mut(&self_).unwrap();
+        let mut inner = context.inner.write().unwrap();
+        inner.variables.insert(name, value);
+    }
+
+    fn evaluate_template(&mut self, self_: wasmtime::component::Resource<fermyon::spin_template::types::ExecutionContext>, template: String) -> Result<String, fermyon::spin_template::types::Error> {
+        let context = self.execution_contexts.get_mut(&self_).unwrap();
+        let inner = context.inner.read().unwrap();
+        inner.evaluate_template(&template).map_err(|e| fermyon::spin_template::types::Error::Other(e.to_string()))
+    }
+
+    fn drop(&mut self, rep: wasmtime::component::Resource<fermyon::spin_template::types::ExecutionContext>) -> wasmtime::Result<()> {
+        self.execution_contexts.delete(rep)?;
+        Ok(())
+    }
+}
 
 impl fermyon::spin_template::ui::Host for Host {
     fn prompt(&mut self, prompt: String) -> Result<String, wasmtime::Error> {
@@ -83,36 +153,6 @@ impl fermyon::spin_template::ui::Host for Host {
             Err(e) => exit_with_error(e),
         }
     }
-    
-    fn substitute_text(&mut self, text: String, substitutions: Vec<fermyon::spin_template::types::Substitution>) -> Result<String, fermyon::spin_template::types::Error> {
-        Ok(substitute_text(&text, &substitutions).unwrap())
-    }
-}
-
-fn substitute_text(text: &str, substitutions: &[fermyon::spin_template::types::Substitution]) -> Result<String, std::convert::Infallible> {
-    let parser = liquid::ParserBuilder::with_stdlib()
-        .filter(crate::filters::KebabCaseFilterParser)
-        .filter(crate::filters::PascalCaseFilterParser)
-        .filter(crate::filters::DottedPascalCaseFilterParser)
-        .filter(crate::filters::SnakeCaseFilterParser)
-        .filter(crate::filters::HttpWildcardFilterParser)
-        .build()
-        .unwrap();
-
-    let template = parser.parse(text).unwrap();
-
-    let mut object = liquid::Object::new();
-
-    for sub in substitutions {
-        object.insert(
-            sub.key.to_owned().into(),
-            liquid_core::Value::Scalar(sub.value.to_owned().into()),
-        );
-    }
-
-    let res = template.render(&object).unwrap();
-    Ok(res)
-
 }
 
 impl fermyon::spin_template::ui::HostFile for Host {
@@ -151,13 +191,13 @@ impl fermyon::spin_template::ui::HostFile for Host {
 }
 
 trait ActionExecutor {
-    fn execute(&self, action: &exports::fermyon::spin_template::template::Action, exec: &exports::fermyon::spin_template::template::Execute) -> anyhow::Result<()>;
+    fn execute(&self, action: &exports::fermyon::spin_template::template::Action) -> anyhow::Result<()>;
 }
 
 struct DryRun;
 
 impl ActionExecutor for DryRun {
-    fn execute(&self, action: &exports::fermyon::spin_template::template::Action, _exec: &exports::fermyon::spin_template::template::Execute) -> anyhow::Result<()> {
+    fn execute(&self, action: &exports::fermyon::spin_template::template::Action) -> anyhow::Result<()> {
         // TODO: this should probably at least eval substitutions
         let dryrun = match action {
             exports::fermyon::spin_template::template::Action::CopyFileSubstituted(path) => format!("Copy {path}"),
@@ -174,10 +214,11 @@ impl ActionExecutor for DryRun {
 struct Apply {
     content_dir: PathBuf,
     output_dir: PathBuf,
+    execution_context: ExecutionContext,
 }
 
 impl ActionExecutor for Apply {
-    fn execute(&self, action: &exports::fermyon::spin_template::template::Action, exec: &exports::fermyon::spin_template::template::Execute) -> anyhow::Result<()> {
+    fn execute(&self, action: &exports::fermyon::spin_template::template::Action) -> anyhow::Result<()> {
         match action {
             exports::fermyon::spin_template::template::Action::CopyFileSubstituted(path) => {
                 let out_file = self.output_dir.join(&path);
@@ -185,7 +226,8 @@ impl ActionExecutor for Apply {
                     std::fs::create_dir_all(d)?;
                 }
                 let tpl = std::fs::read_to_string(self.content_dir.join(&path))?;
-                let new_text = substitute_text(&tpl, &exec.substitutions)?;
+                // let new_text = substitute_text(&tpl, &exec.substitutions)?;
+                let new_text = self.execution_context.evaluate_template(&tpl)?;
                 std::fs::write(&out_file, &new_text)?;
             }
             exports::fermyon::spin_template::template::Action::CopyFileToSubstituted((from, to)) => {
@@ -194,7 +236,8 @@ impl ActionExecutor for Apply {
                     std::fs::create_dir_all(d)?;
                 }
                 let tpl = std::fs::read_to_string(self.content_dir.join(&from))?;
-                let new_text = substitute_text(&tpl, &exec.substitutions)?;
+                // let new_text = substitute_text(&tpl, &exec.substitutions)?;
+                let new_text = self.execution_context.evaluate_template(&tpl)?;
                 std::fs::write(&out_file, &new_text)?;
             }
             exports::fermyon::spin_template::template::Action::CopyFileToRaw((from, to)) => {
@@ -228,15 +271,35 @@ fn main() -> anyhow::Result<()> {
     let tpl_dir = manifest_path.parent().expect("shouldna passed the root dir");
     let content_dir = tpl_dir.join("content");
 
+    let manifest: Manifest = toml::from_str(&std::fs::read_to_string(&manifest_path).unwrap()).unwrap();
+    let file = tpl_dir.join(manifest.template);
+
+    let parser_builder = liquid::ParserBuilder::with_stdlib()
+        .filter(crate::filters::KebabCaseFilterParser)
+        .filter(crate::filters::PascalCaseFilterParser)
+        .filter(crate::filters::DottedPascalCaseFilterParser)
+        .filter(crate::filters::SnakeCaseFilterParser)
+        .filter(crate::filters::HttpWildcardFilterParser);
+
+    for (_name, _filter_path) in &manifest.filter {
+        // parser_builder.filter(something);
+    }
+
+    let parser = parser_builder.build()?;
+
+    let initial_variables = [
+        ("project-name", "merlin-the-happy-project"),
+        ("authors", "merlin-the-happy-pig"),
+    ].into_iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
+
+    let execution_context = ExecutionContext::new(initial_variables, parser);
+
     let action_executor: Box<dyn ActionExecutor> = if std::env::args().any(|v| v == "--dry-run") {
         Box::new(DryRun)
     } else {
         let output_dir = PathBuf::from(std::env::args().nth(2).expect("Usage: run-template <FILE> {--dry-run | <OUT_DIR> }"));
-        Box::new(Apply { content_dir: content_dir.clone(), output_dir })
+        Box::new(Apply { execution_context: execution_context.clone(), content_dir: content_dir.clone(), output_dir })
     };
-
-    let manifest: Manifest = toml::from_str(&std::fs::read_to_string(&manifest_path).unwrap()).unwrap();
-    let file = tpl_dir.join(manifest.template);
 
     let mut config = wasmtime::Config::new();
     config.wasm_component_model(true);
@@ -247,12 +310,15 @@ fn main() -> anyhow::Result<()> {
     let mut linker = wasmtime::component::Linker::new(&engine);
     RunTemplate::add_to_linker(&mut linker, |state: &mut Host| state).expect("shoulda added to linker");
 
-    let mut store = wasmtime::Store::new(&engine, Host::new(&content_dir));
+    let mut host = Host::new(&content_dir);
+    let execution_context = host.execution_contexts.push(execution_context)?;
+
+    let mut store = wasmtime::Store::new(&engine, host);
 
     let (bindings, _) = RunTemplate::instantiate(&mut store, &component, &linker).expect("should instantiated");
 
-    let mut exec = match bindings.fermyon_spin_template_template().call_run(&mut store) {
-        Ok(Ok(exec)) => exec,
+    let actions = match bindings.fermyon_spin_template_template().call_run(store, execution_context) {
+        Ok(Ok(actions)) => actions,
         Ok(Err(exports::fermyon::spin_template::template::Error::Cancel)) => return Ok(()),
         Ok(Err(e)) => return Err(e.into()),
         Err(e) => return match e.downcast::<DialogueTrap>() {
@@ -262,85 +328,12 @@ fn main() -> anyhow::Result<()> {
             }
     };
 
-    augment_substitutions(&mut exec.substitutions);
-
-    for action in &exec.actions {
-        action_executor.execute(action, &exec)?;
+    for action in &actions {
+        action_executor.execute(action)?;
     };
-
-    // if dry_run {
-    //     for a in exec.actions {
-    //         let dryrun = match a {
-    //             exports::fermyon::spin_template::template::Action::CopyFileSubstituted(path) => format!("Copy {path}"),
-    //             exports::fermyon::spin_template::template::Action::CopyFileToSubstituted((from, to)) => format!("Copy file {from} to {to}"),
-    //             exports::fermyon::spin_template::template::Action::CopyFileToRaw((from, to)) => format!("Copy raw file {from} to {to}"),
-    //             exports::fermyon::spin_template::template::Action::WriteFile((path, content)) => format!("Write '{content}' bytes to {path}"),
-    //             exports::fermyon::spin_template::template::Action::WriteFileBinary((path, content)) => format!("Write {} bytes to {path}", content.len()),
-    //         };
-    //         println!("{dryrun}");
-    //     }
-    // } else {
-    //     for a in exec.actions {
-    //         match a {
-    //             exports::fermyon::spin_template::template::Action::CopyFileSubstituted(path) => {
-    //                 let out_file = output_dir.join(&path);
-    //                 if let Some(d) = out_file.parent() {
-    //                     std::fs::create_dir_all(d).unwrap();
-    //                 }
-    //                 let tpl = std::fs::read_to_string(content_dir.join(&path)).unwrap();
-    //                 let new_text = substitute_text(&tpl, &exec.substitutions).unwrap();
-    //                 std::fs::write(&out_file, &new_text).unwrap();
-    //             }
-    //             exports::fermyon::spin_template::template::Action::CopyFileToSubstituted((from, to)) => {
-    //                 let out_file = output_dir.join(&to);
-    //                 if let Some(d) = out_file.parent() {
-    //                     std::fs::create_dir_all(d).unwrap();
-    //                 }
-    //                 let tpl = std::fs::read_to_string(content_dir.join(&from)).unwrap();
-    //                 let new_text = substitute_text(&tpl, &exec.substitutions).unwrap();
-    //                 std::fs::write(&out_file, &new_text).unwrap();
-    //             }
-    //             exports::fermyon::spin_template::template::Action::CopyFileToRaw((from, to)) => {
-    //                 let out_file = output_dir.join(&to);
-    //                 if let Some(d) = out_file.parent() {
-    //                     std::fs::create_dir_all(d).unwrap();
-    //                 }
-    //                 std::fs::copy(content_dir.join(&from), &out_file).unwrap();
-    //             }
-    //             exports::fermyon::spin_template::template::Action::WriteFile((path, content)) => {
-    //                 let out_file = output_dir.join(&path);
-    //                 if let Some(d) = out_file.parent() {
-    //                     std::fs::create_dir_all(d).unwrap();
-    //                 }
-    //                 std::fs::write(&out_file, &content).unwrap();
-    //             }
-    //             exports::fermyon::spin_template::template::Action::WriteFileBinary((path, content)) => {
-    //                 let out_file = output_dir.join(&path);
-    //                 if let Some(d) = out_file.parent() {
-    //                     std::fs::create_dir_all(d).unwrap();
-    //                 }
-    //                 std::fs::write(&out_file, &content).unwrap();
-    //             }
-    //         }
-    //     }
-    // }
 
     println!("Done!");
     Ok(())
-}
-
-// TODO: maybe substitutions should be a resource already initialised with this stuff
-fn augment_substitutions(substitutions: &mut Vec<fermyon::spin_template::types::Substitution>) {
-    try_augment_substitutions(substitutions, "project-name", "merlin-the-happy-project");
-    try_augment_substitutions(substitutions, "authors", "merlin-the-happy-pig");
-}
-
-fn try_augment_substitutions(substitutions: &mut Vec<fermyon::spin_template::types::Substitution>, key: &str, value: &str) {
-    if substitutions.iter().any(|s| s.key == key) {
-        return;
-    }
-
-    substitutions.push(fermyon::spin_template::types::Substitution { key: key.to_string(), value: value.to_string() });
 }
 
 fn cancel<T>() -> Result<T, wasmtime::Error> {
@@ -354,4 +347,6 @@ fn exit_with_error<T>(e: dialoguer::Error) -> Result<T, wasmtime::Error> {
 #[derive(Deserialize)]
 struct Manifest {
     template: String,
+    #[serde(default)]
+    filter: HashMap<String, PathBuf>,
 }

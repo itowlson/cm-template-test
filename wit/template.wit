@@ -1,18 +1,22 @@
 package fermyon:spin-template@0.0.1;
 
 interface types {
-    record substitution {
-        key: string,
-        value: string,
-    }
+    //record substitution {
+    //    key: string,
+    //    value: string,
+    //}
     variant error {
         cancel,  // I know it's not truly an error but work with me here
         other(string),
     }
+    resource execution-context {
+        set-variable: func(name: string, value: string);
+        evaluate-template: func(template: string) -> result<string, error>;
+    }
 }
 
 interface template {
-    use types.{error, substitution};
+    use types.{error, execution-context};
 
     variant action {
         copy-file-substituted(string),
@@ -21,15 +25,16 @@ interface template {
         write-file(tuple<string, string>),
         write-file-binary(tuple<string, list<u8>>),
     }
-    record execute {
-        substitutions: list<substitution>,
-        actions: list<action>,
-    }
-    run: func() -> result<execute, error>;
+    //record execute {
+    //    substitutions: list<substitution>,
+    //    actions: list<action>,
+    //}
+    // run: func() -> result<execute, error>;
+    run: func(context: execution-context) -> result<list<action>, error>;
 }
 
 interface ui {
-    use types.{error, substitution};
+    use types.{error};
 
     prompt: func(prompt: string) -> string;
     confirm: func(prompt: string) -> bool;
@@ -42,7 +47,7 @@ interface ui {
         read-binary: func() -> result<list<u8>, error>;
     }
 
-    substitute-text: func(text: string, substitutions: list<substitution>) -> result<string, error>;
+    // substitute-text: func(text: string, substitutions: list<substitution>) -> result<string, error>;
 }
 
 world run-template {
