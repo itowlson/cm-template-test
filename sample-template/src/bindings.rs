@@ -543,13 +543,157 @@ pub mod exports {
                 pub type Error = super::super::super::super::fermyon::spin_template::types::Error;
                 pub type ExecutionContext =
                     super::super::super::super::fermyon::spin_template::types::ExecutionContext;
-                #[derive(Clone)]
+
+                #[derive(Debug)]
+                #[repr(transparent)]
+                pub struct Edit {
+                    handle: _rt::Resource<Edit>,
+                }
+
+                type _EditRep<T> = Option<T>;
+
+                impl Edit {
+                    /// Creates a new resource from the specified representation.
+                    ///
+                    /// This function will create a new resource handle by moving `val` onto
+                    /// the heap and then passing that heap pointer to the component model to
+                    /// create a handle. The owned handle is then returned as `Edit`.
+                    pub fn new<T: GuestEdit>(val: T) -> Self {
+                        Self::type_guard::<T>();
+                        let val: _EditRep<T> = Some(val);
+                        let ptr: *mut _EditRep<T> = _rt::Box::into_raw(_rt::Box::new(val));
+                        unsafe { Self::from_handle(T::_resource_new(ptr.cast())) }
+                    }
+
+                    /// Gets access to the underlying `T` which represents this resource.
+                    pub fn get<T: GuestEdit>(&self) -> &T {
+                        let ptr = unsafe { &*self.as_ptr::<T>() };
+                        ptr.as_ref().unwrap()
+                    }
+
+                    /// Gets mutable access to the underlying `T` which represents this
+                    /// resource.
+                    pub fn get_mut<T: GuestEdit>(&mut self) -> &mut T {
+                        let ptr = unsafe { &mut *self.as_ptr::<T>() };
+                        ptr.as_mut().unwrap()
+                    }
+
+                    /// Consumes this resource and returns the underlying `T`.
+                    pub fn into_inner<T: GuestEdit>(self) -> T {
+                        let ptr = unsafe { &mut *self.as_ptr::<T>() };
+                        ptr.take().unwrap()
+                    }
+
+                    #[doc(hidden)]
+                    pub unsafe fn from_handle(handle: u32) -> Self {
+                        Self {
+                            handle: _rt::Resource::from_handle(handle),
+                        }
+                    }
+
+                    #[doc(hidden)]
+                    pub fn take_handle(&self) -> u32 {
+                        _rt::Resource::take_handle(&self.handle)
+                    }
+
+                    #[doc(hidden)]
+                    pub fn handle(&self) -> u32 {
+                        _rt::Resource::handle(&self.handle)
+                    }
+
+                    // It's theoretically possible to implement the `GuestEdit` trait twice
+                    // so guard against using it with two different types here.
+                    #[doc(hidden)]
+                    fn type_guard<T: 'static>() {
+                        use core::any::TypeId;
+                        static mut LAST_TYPE: Option<TypeId> = None;
+                        unsafe {
+                            assert!(!cfg!(target_feature = "threads"));
+                            let id = TypeId::of::<T>();
+                            match LAST_TYPE {
+                                Some(ty) => assert!(
+                                    ty == id,
+                                    "cannot use two types with this resource type"
+                                ),
+                                None => LAST_TYPE = Some(id),
+                            }
+                        }
+                    }
+
+                    #[doc(hidden)]
+                    pub unsafe fn dtor<T: 'static>(handle: *mut u8) {
+                        Self::type_guard::<T>();
+                        let _ = _rt::Box::from_raw(handle as *mut _EditRep<T>);
+                    }
+
+                    fn as_ptr<T: GuestEdit>(&self) -> *mut _EditRep<T> {
+                        Edit::type_guard::<T>();
+                        T::_resource_rep(self.handle()).cast()
+                    }
+                }
+
+                /// A borrowed version of [`Edit`] which represents a borrowed value
+                /// with the lifetime `'a`.
+                #[derive(Debug)]
+                #[repr(transparent)]
+                pub struct EditBorrow<'a> {
+                    rep: *mut u8,
+                    _marker: core::marker::PhantomData<&'a Edit>,
+                }
+
+                impl<'a> EditBorrow<'a> {
+                    #[doc(hidden)]
+                    pub unsafe fn lift(rep: usize) -> Self {
+                        Self {
+                            rep: rep as *mut u8,
+                            _marker: core::marker::PhantomData,
+                        }
+                    }
+
+                    /// Gets access to the underlying `T` in this resource.
+                    pub fn get<T: GuestEdit>(&self) -> &T {
+                        let ptr = unsafe { &mut *self.as_ptr::<T>() };
+                        ptr.as_ref().unwrap()
+                    }
+
+                    // NB: mutable access is not allowed due to the component model allowing
+                    // multiple borrows of the same resource.
+
+                    fn as_ptr<T: 'static>(&self) -> *mut _EditRep<T> {
+                        Edit::type_guard::<T>();
+                        self.rep.cast()
+                    }
+                }
+
+                unsafe impl _rt::WasmResource for Edit {
+                    #[inline]
+                    unsafe fn drop(_handle: u32) {
+                        #[cfg(not(target_arch = "wasm32"))]
+                        unreachable!();
+
+                        #[cfg(target_arch = "wasm32")]
+                        {
+                            #[link(
+                                wasm_import_module = "[export]fermyon:spin-template/template@0.0.1"
+                            )]
+                            extern "C" {
+                                #[link_name = "[resource-drop]edit"]
+                                fn drop(_: u32);
+                            }
+
+                            drop(_handle);
+                        }
+                    }
+                }
+
                 pub enum Action {
                     CopyFileSubstituted(_rt::String),
                     CopyFileToSubstituted((_rt::String, _rt::String)),
                     CopyFileToRaw((_rt::String, _rt::String)),
                     WriteFile((_rt::String, _rt::String)),
                     WriteFileBinary((_rt::String, _rt::Vec<u8>)),
+                    /// edit-file(tuple<string, func(existing: string) -> string>), // no! no! no!
+                    EditFile((_rt::String, Edit)),
                 }
                 impl ::core::fmt::Debug for Action {
                     fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
@@ -571,6 +715,79 @@ pub mod exports {
                             Action::WriteFileBinary(e) => {
                                 f.debug_tuple("Action::WriteFileBinary").field(e).finish()
                             }
+                            Action::EditFile(e) => {
+                                f.debug_tuple("Action::EditFile").field(e).finish()
+                            }
+                        }
+                    }
+                }
+                #[doc(hidden)]
+                #[allow(non_snake_case)]
+                pub unsafe fn _export_method_edit_apply_cabi<T: GuestEdit>(
+                    arg0: *mut u8,
+                    arg1: *mut u8,
+                    arg2: usize,
+                ) -> *mut u8 {
+                    #[cfg(target_arch = "wasm32")]
+                    _rt::run_ctors_once();
+                    let len0 = arg2;
+                    let bytes0 = _rt::Vec::from_raw_parts(arg1.cast(), len0, len0);
+                    let result1 = T::apply(
+                        EditBorrow::lift(arg0 as u32 as usize).get(),
+                        _rt::string_lift(bytes0),
+                    );
+                    let ptr2 = _RET_AREA.0.as_mut_ptr().cast::<u8>();
+                    match result1 {
+                        Ok(e) => {
+                            *ptr2.add(0).cast::<u8>() = (0i32) as u8;
+                            let vec3 = (e.into_bytes()).into_boxed_slice();
+                            let ptr3 = vec3.as_ptr().cast::<u8>();
+                            let len3 = vec3.len();
+                            ::core::mem::forget(vec3);
+                            *ptr2.add(8).cast::<usize>() = len3;
+                            *ptr2.add(4).cast::<*mut u8>() = ptr3.cast_mut();
+                        }
+                        Err(e) => {
+                            *ptr2.add(0).cast::<u8>() = (1i32) as u8;
+                            use super::super::super::super::fermyon::spin_template::types::Error as V5;
+                            match e {
+                                V5::Cancel => {
+                                    *ptr2.add(4).cast::<u8>() = (0i32) as u8;
+                                }
+                                V5::Other(e) => {
+                                    *ptr2.add(4).cast::<u8>() = (1i32) as u8;
+                                    let vec4 = (e.into_bytes()).into_boxed_slice();
+                                    let ptr4 = vec4.as_ptr().cast::<u8>();
+                                    let len4 = vec4.len();
+                                    ::core::mem::forget(vec4);
+                                    *ptr2.add(12).cast::<usize>() = len4;
+                                    *ptr2.add(8).cast::<*mut u8>() = ptr4.cast_mut();
+                                }
+                            }
+                        }
+                    };
+                    ptr2
+                }
+                #[doc(hidden)]
+                #[allow(non_snake_case)]
+                pub unsafe fn __post_return_method_edit_apply<T: GuestEdit>(arg0: *mut u8) {
+                    let l0 = i32::from(*arg0.add(0).cast::<u8>());
+                    match l0 {
+                        0 => {
+                            let l1 = *arg0.add(4).cast::<*mut u8>();
+                            let l2 = *arg0.add(8).cast::<usize>();
+                            _rt::cabi_dealloc(l1, l2, 1);
+                        }
+                        _ => {
+                            let l3 = i32::from(*arg0.add(4).cast::<u8>());
+                            match l3 {
+                                0 => (),
+                                _ => {
+                                    let l4 = *arg0.add(8).cast::<*mut u8>();
+                                    let l5 = *arg0.add(12).cast::<usize>();
+                                    _rt::cabi_dealloc(l4, l5, 1);
+                                }
+                            }
                         }
                     }
                 }
@@ -584,14 +801,14 @@ pub mod exports {
                     match result0 {
                         Ok(e) => {
                             *ptr1.add(0).cast::<u8>() = (0i32) as u8;
-                            let vec15 = e;
-                            let len15 = vec15.len();
-                            let layout15 =
-                                _rt::alloc::Layout::from_size_align_unchecked(vec15.len() * 20, 4);
-                            let result15 = if layout15.size() != 0 {
-                                let ptr = _rt::alloc::alloc(layout15).cast::<u8>();
+                            let vec17 = e;
+                            let len17 = vec17.len();
+                            let layout17 =
+                                _rt::alloc::Layout::from_size_align_unchecked(vec17.len() * 20, 4);
+                            let result17 = if layout17.size() != 0 {
+                                let ptr = _rt::alloc::alloc(layout17).cast::<u8>();
                                 if ptr.is_null() {
-                                    _rt::alloc::handle_alloc_error(layout15);
+                                    _rt::alloc::handle_alloc_error(layout17);
                                 }
                                 ptr
                             } else {
@@ -599,8 +816,8 @@ pub mod exports {
                                     ::core::ptr::null_mut()
                                 }
                             };
-                            for (i, e) in vec15.into_iter().enumerate() {
-                                let base = result15.add(i * 20);
+                            for (i, e) in vec17.into_iter().enumerate() {
+                                let base = result17.add(i * 20);
                                 {
                                     match e {
                                         Action::CopyFileSubstituted(e) => {
@@ -676,27 +893,39 @@ pub mod exports {
                                             *base.add(16).cast::<usize>() = len14;
                                             *base.add(12).cast::<*mut u8>() = ptr14.cast_mut();
                                         }
+                                        Action::EditFile(e) => {
+                                            *base.add(0).cast::<u8>() = (5i32) as u8;
+                                            let (t15_0, t15_1) = e;
+                                            let vec16 = (t15_0.into_bytes()).into_boxed_slice();
+                                            let ptr16 = vec16.as_ptr().cast::<u8>();
+                                            let len16 = vec16.len();
+                                            ::core::mem::forget(vec16);
+                                            *base.add(8).cast::<usize>() = len16;
+                                            *base.add(4).cast::<*mut u8>() = ptr16.cast_mut();
+                                            *base.add(12).cast::<i32>() =
+                                                (t15_1).take_handle() as i32;
+                                        }
                                     }
                                 }
                             }
-                            *ptr1.add(8).cast::<usize>() = len15;
-                            *ptr1.add(4).cast::<*mut u8>() = result15;
+                            *ptr1.add(8).cast::<usize>() = len17;
+                            *ptr1.add(4).cast::<*mut u8>() = result17;
                         }
                         Err(e) => {
                             *ptr1.add(0).cast::<u8>() = (1i32) as u8;
-                            use super::super::super::super::fermyon::spin_template::types::Error as V17;
+                            use super::super::super::super::fermyon::spin_template::types::Error as V19;
                             match e {
-                                V17::Cancel => {
+                                V19::Cancel => {
                                     *ptr1.add(4).cast::<u8>() = (0i32) as u8;
                                 }
-                                V17::Other(e) => {
+                                V19::Other(e) => {
                                     *ptr1.add(4).cast::<u8>() = (1i32) as u8;
-                                    let vec16 = (e.into_bytes()).into_boxed_slice();
-                                    let ptr16 = vec16.as_ptr().cast::<u8>();
-                                    let len16 = vec16.len();
-                                    ::core::mem::forget(vec16);
-                                    *ptr1.add(12).cast::<usize>() = len16;
-                                    *ptr1.add(8).cast::<*mut u8>() = ptr16.cast_mut();
+                                    let vec18 = (e.into_bytes()).into_boxed_slice();
+                                    let ptr18 = vec18.as_ptr().cast::<u8>();
+                                    let len18 = vec18.len();
+                                    ::core::mem::forget(vec18);
+                                    *ptr1.add(12).cast::<usize>() = len18;
+                                    *ptr1.add(8).cast::<*mut u8>() = ptr18.cast_mut();
                                 }
                             }
                         }
@@ -709,12 +938,12 @@ pub mod exports {
                     let l0 = i32::from(*arg0.add(0).cast::<u8>());
                     match l0 {
                         0 => {
-                            let l21 = *arg0.add(4).cast::<*mut u8>();
-                            let l22 = *arg0.add(8).cast::<usize>();
-                            let base23 = l21;
-                            let len23 = l22;
-                            for i in 0..len23 {
-                                let base = base23.add(i * 20);
+                            let l23 = *arg0.add(4).cast::<*mut u8>();
+                            let l24 = *arg0.add(8).cast::<usize>();
+                            let base25 = l23;
+                            let len25 = l24;
+                            for i in 0..len25 {
+                                let base = base25.add(i * 20);
                                 {
                                     let l1 = i32::from(*base.add(0).cast::<u8>());
                                     match l1 {
@@ -747,7 +976,7 @@ pub mod exports {
                                             let l15 = *base.add(16).cast::<usize>();
                                             _rt::cabi_dealloc(l14, l15, 1);
                                         }
-                                        _ => {
+                                        4 => {
                                             let l16 = *base.add(4).cast::<*mut u8>();
                                             let l17 = *base.add(8).cast::<usize>();
                                             _rt::cabi_dealloc(l16, l17, 1);
@@ -757,42 +986,119 @@ pub mod exports {
                                             let len20 = l19;
                                             _rt::cabi_dealloc(base20, len20 * 1, 1);
                                         }
+                                        _ => {
+                                            let l21 = *base.add(4).cast::<*mut u8>();
+                                            let l22 = *base.add(8).cast::<usize>();
+                                            _rt::cabi_dealloc(l21, l22, 1);
+                                        }
                                     }
                                 }
                             }
-                            _rt::cabi_dealloc(base23, len23 * 20, 4);
+                            _rt::cabi_dealloc(base25, len25 * 20, 4);
                         }
                         _ => {
-                            let l24 = i32::from(*arg0.add(4).cast::<u8>());
-                            match l24 {
+                            let l26 = i32::from(*arg0.add(4).cast::<u8>());
+                            match l26 {
                                 0 => (),
                                 _ => {
-                                    let l25 = *arg0.add(8).cast::<*mut u8>();
-                                    let l26 = *arg0.add(12).cast::<usize>();
-                                    _rt::cabi_dealloc(l25, l26, 1);
+                                    let l27 = *arg0.add(8).cast::<*mut u8>();
+                                    let l28 = *arg0.add(12).cast::<usize>();
+                                    _rt::cabi_dealloc(l27, l28, 1);
                                 }
                             }
                         }
                     }
                 }
                 pub trait Guest {
+                    type Edit: GuestEdit;
                     fn run(context: ExecutionContext) -> Result<_rt::Vec<Action>, Error>;
+                }
+                pub trait GuestEdit: 'static {
+                    #[doc(hidden)]
+                    unsafe fn _resource_new(val: *mut u8) -> u32
+                    where
+                        Self: Sized,
+                    {
+                        #[cfg(not(target_arch = "wasm32"))]
+                        {
+                            let _ = val;
+                            unreachable!();
+                        }
+
+                        #[cfg(target_arch = "wasm32")]
+                        {
+                            #[link(
+                                wasm_import_module = "[export]fermyon:spin-template/template@0.0.1"
+                            )]
+                            extern "C" {
+                                #[link_name = "[resource-new]edit"]
+                                fn new(_: *mut u8) -> u32;
+                            }
+                            new(val)
+                        }
+                    }
+
+                    #[doc(hidden)]
+                    fn _resource_rep(handle: u32) -> *mut u8
+                    where
+                        Self: Sized,
+                    {
+                        #[cfg(not(target_arch = "wasm32"))]
+                        {
+                            let _ = handle;
+                            unreachable!();
+                        }
+
+                        #[cfg(target_arch = "wasm32")]
+                        {
+                            #[link(
+                                wasm_import_module = "[export]fermyon:spin-template/template@0.0.1"
+                            )]
+                            extern "C" {
+                                #[link_name = "[resource-rep]edit"]
+                                fn rep(_: u32) -> *mut u8;
+                            }
+                            unsafe { rep(handle) }
+                        }
+                    }
+
+                    fn apply(&self, text: _rt::String) -> Result<_rt::String, Error>;
                 }
                 #[doc(hidden)]
 
                 macro_rules! __export_fermyon_spin_template_template_0_0_1_cabi{
-        ($ty:ident with_types_in $($path_to_types:tt)*) => (const _: () = {
+      ($ty:ident with_types_in $($path_to_types:tt)*) => (const _: () = {
 
-          #[export_name = "fermyon:spin-template/template@0.0.1#run"]
-          unsafe extern "C" fn export_run(arg0: i32,) -> *mut u8 {
-            $($path_to_types)*::_export_run_cabi::<$ty>(arg0)
+        #[export_name = "fermyon:spin-template/template@0.0.1#[method]edit.apply"]
+        unsafe extern "C" fn export_method_edit_apply(arg0: *mut u8,arg1: *mut u8,arg2: usize,) -> *mut u8 {
+          $($path_to_types)*::_export_method_edit_apply_cabi::<<$ty as $($path_to_types)*::Guest>::Edit>(arg0, arg1, arg2)
+        }
+        #[export_name = "cabi_post_fermyon:spin-template/template@0.0.1#[method]edit.apply"]
+        unsafe extern "C" fn _post_return_method_edit_apply(arg0: *mut u8,) {
+          $($path_to_types)*::__post_return_method_edit_apply::<<$ty as $($path_to_types)*::Guest>::Edit>(arg0)
+        }
+        #[export_name = "fermyon:spin-template/template@0.0.1#run"]
+        unsafe extern "C" fn export_run(arg0: i32,) -> *mut u8 {
+          $($path_to_types)*::_export_run_cabi::<$ty>(arg0)
+        }
+        #[export_name = "cabi_post_fermyon:spin-template/template@0.0.1#run"]
+        unsafe extern "C" fn _post_return_run(arg0: *mut u8,) {
+          $($path_to_types)*::__post_return_run::<$ty>(arg0)
+        }
+
+        const _: () = {
+          #[doc(hidden)]
+          #[export_name = "fermyon:spin-template/template@0.0.1#[dtor]edit"]
+          #[allow(non_snake_case)]
+          unsafe extern "C" fn dtor(rep: *mut u8) {
+            $($path_to_types)*::Edit::dtor::<
+            <$ty as $($path_to_types)*::Guest>::Edit
+            >(rep)
           }
-          #[export_name = "cabi_post_fermyon:spin-template/template@0.0.1#run"]
-          unsafe extern "C" fn _post_return_run(arg0: *mut u8,) {
-            $($path_to_types)*::__post_return_run::<$ty>(arg0)
-          }
-        };);
-      }
+        };
+
+      };);
+    }
                 #[doc(hidden)]
                 pub(crate) use __export_fermyon_spin_template_template_0_0_1_cabi;
                 #[repr(align(4))]
@@ -933,6 +1239,7 @@ mod _rt {
         let layout = alloc::Layout::from_size_align_unchecked(size, align);
         alloc::dealloc(ptr as *mut u8, layout);
     }
+    pub use alloc_crate::boxed::Box;
 
     #[cfg(target_arch = "wasm32")]
     pub fn run_ctors_once() {
@@ -972,8 +1279,8 @@ pub(crate) use __export_run_template_impl as export;
 #[cfg(target_arch = "wasm32")]
 #[link_section = "component-type:wit-bindgen:0.25.0:run-template:encoded world"]
 #[doc(hidden)]
-pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 1019] = *b"\
-\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xf8\x06\x01A\x02\x01\
+pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 1098] = *b"\
+\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xc7\x07\x01A\x02\x01\
 A\x08\x01B\x09\x01q\x02\x06cancel\0\0\x05other\x01s\0\x04\0\x05error\x03\0\0\x04\
 \0\x11execution-context\x03\x01\x01h\x02\x01@\x03\x04self\x03\x04names\x05values\
 \x01\0\x04\0&[method]execution-context.set-variable\x01\x04\x01j\x01s\x01\x01\x01\
@@ -986,16 +1293,18 @@ i\x02\x01p\x03\x01@\0\0\x04\x04\0\x15[static]file.list-all\x01\x05\x01h\x02\x01@
 \x01@\x01\x04self\x06\0\x0b\x04\0\x18[method]file.read-binary\x01\x0c\x01@\x01\x06\
 prompts\0s\x04\0\x06prompt\x01\x0d\x01@\x01\x06prompts\0\x7f\x04\0\x07confirm\x01\
 \x0e\x01ps\x01@\x02\x06prompts\x05items\x0f\0}\x04\0\x06select\x01\x10\x03\x01\x1e\
-fermyon:spin-template/ui@0.0.1\x05\x02\x02\x03\0\0\x11execution-context\x01B\x0e\
+fermyon:spin-template/ui@0.0.1\x05\x02\x02\x03\0\0\x11execution-context\x01B\x15\
 \x02\x03\x02\x01\x01\x04\0\x05error\x03\0\0\x02\x03\x02\x01\x03\x04\0\x11executi\
-on-context\x03\0\x02\x01o\x02ss\x01p}\x01o\x02s\x05\x01q\x05\x15copy-file-substi\
-tuted\x01s\0\x18copy-file-to-substituted\x01\x04\0\x10copy-file-to-raw\x01\x04\0\
-\x0awrite-file\x01\x04\0\x11write-file-binary\x01\x06\0\x04\0\x06action\x03\0\x07\
-\x01i\x03\x01p\x08\x01j\x01\x0a\x01\x01\x01@\x01\x07context\x09\0\x0b\x04\0\x03r\
-un\x01\x0c\x04\x01$fermyon:spin-template/template@0.0.1\x05\x04\x04\x01(fermyon:\
-spin-template/run-template@0.0.1\x04\0\x0b\x12\x01\0\x0crun-template\x03\0\0\0G\x09\
-producers\x01\x0cprocessed-by\x02\x0dwit-component\x070.208.1\x10wit-bindgen-rus\
-t\x060.25.0";
+on-context\x03\0\x02\x04\0\x04edit\x03\x01\x01o\x02ss\x01p}\x01o\x02s\x06\x01i\x04\
+\x01o\x02s\x08\x01q\x06\x15copy-file-substituted\x01s\0\x18copy-file-to-substitu\
+ted\x01\x05\0\x10copy-file-to-raw\x01\x05\0\x0awrite-file\x01\x05\0\x11write-fil\
+e-binary\x01\x07\0\x09edit-file\x01\x09\0\x04\0\x06action\x03\0\x0a\x01h\x04\x01\
+j\x01s\x01\x01\x01@\x02\x04self\x0c\x04texts\0\x0d\x04\0\x12[method]edit.apply\x01\
+\x0e\x01i\x03\x01p\x0b\x01j\x01\x10\x01\x01\x01@\x01\x07context\x0f\0\x11\x04\0\x03\
+run\x01\x12\x04\x01$fermyon:spin-template/template@0.0.1\x05\x04\x04\x01(fermyon\
+:spin-template/run-template@0.0.1\x04\0\x0b\x12\x01\0\x0crun-template\x03\0\0\0G\
+\x09producers\x01\x0cprocessed-by\x02\x0dwit-component\x070.208.1\x10wit-bindgen\
+-rust\x060.25.0";
 
 #[inline(never)]
 #[doc(hidden)]

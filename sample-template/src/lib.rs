@@ -7,8 +7,12 @@ use bindings::exports::fermyon::spin_template::template::{Action, Error as Templ
 use bindings::fermyon::spin_template::ui;
 
 struct Component;
+struct MyEdit;
+struct BananaEdit;
 
 impl Guest for Component {
+    type Edit = Box<dyn bindings::exports::fermyon::spin_template::template::GuestEdit>;
+
     fn run(context: bindings::exports::fermyon::spin_template::template::ExecutionContext) -> Result<Vec<Action>, TemplateError> {
         let mut actions = vec![];
 
@@ -55,7 +59,33 @@ impl Guest for Component {
 
         actions.push(Action::WriteFileBinary(("binned.bin".to_owned(), vec![1,2,3,4])));
 
+        let edit: Self::Edit = if src == 1 {
+            Box::new(BananaEdit)
+        } else {
+            Box::new(MyEdit)
+        };
+        let e = bindings::exports::fermyon::spin_template::template::Edit::new(edit);
+        actions.push(Action::EditFile(("spork.txt".to_owned(), e)));
+
         Ok(actions)
+    }
+}
+
+impl bindings::exports::fermyon::spin_template::template::GuestEdit for Box<dyn bindings::exports::fermyon::spin_template::template::GuestEdit> {
+    fn apply(&self, text: String) -> Result<String, TemplateError> {
+        self.as_ref().apply(text)
+    }
+}
+
+impl bindings::exports::fermyon::spin_template::template::GuestEdit for MyEdit {
+    fn apply(&self, text: String) -> Result<String, TemplateError> {
+        Ok(format!("{text} AND A SPORK!"))
+    }
+}
+
+impl bindings::exports::fermyon::spin_template::template::GuestEdit for BananaEdit {
+    fn apply(&self, text: String) -> Result<String, TemplateError> {
+        Ok(format!("{text} But a *banana*? Really?"))
     }
 }
 

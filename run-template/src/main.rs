@@ -206,6 +206,7 @@ impl ActionExecutor for DryRun {
             exports::fermyon::spin_template::template::Action::CopyFileToRaw((from, to)) => format!("Copy raw file {from} to {to}"),
             exports::fermyon::spin_template::template::Action::WriteFile((path, content)) => format!("Write '{content}' bytes to {path}"),
             exports::fermyon::spin_template::template::Action::WriteFileBinary((path, content)) => format!("Write {} bytes to {path}", content.len()),
+            exports::fermyon::spin_template::template::Action::EditFile((path, _edit)) => format!("Edit {path}"),
         };
         println!("{dryrun}");
         Ok(())
@@ -213,6 +214,8 @@ impl ActionExecutor for DryRun {
 }
 
 struct Apply {
+    store: Arc<RwLock<wasmtime::Store<Host>>>,  // we're going to need a mutable ref via an immutable self
+    guest: RunTemplate,
     content_dir: PathBuf,
     output_dir: PathBuf,
     execution_context: ExecutionContext,
@@ -262,15 +265,47 @@ impl ActionExecutor for Apply {
                 }
                 std::fs::write(&out_file, &content)?;
             }
+            exports::fermyon::spin_template::template::Action::EditFile((path, edit)) => {
+                use std::ops::DerefMut;
+                let mut store = self.store.write().unwrap();
+                let store = store.deref_mut();
+                let guest = self.guest.fermyon_spin_template_template();
+
+                let edit_file = self.output_dir.join(&path);
+                let edit_result = apply_edit(edit_file, edit, guest, store);
+                _ = edit.resource_drop(store);
+                edit_result?;
+            }
         }
         Ok(())
     }
+}
+
+// Extracts implementation of edit callback so that we can make sure to dispose the ResourceAny without
+// having a surfeit of failure paths.
+fn apply_edit(edit_file: impl AsRef<Path>, edit: &wasmtime::component::ResourceAny, guest: &exports::fermyon::spin_template::template::Guest, store: &mut wasmtime::Store<Host>) -> anyhow::Result<()> {
+    let edit_file = edit_file.as_ref();
+    let edit_content = std::fs::read_to_string(&edit_file).unwrap_or_default();
+    let edit_result = match guest.edit().call_apply(store, *edit, &edit_content) {
+        Ok(Ok(r)) => r,
+        Ok(Err(fermyon::spin_template::types::Error::Cancel)) => return Ok(()),
+        Ok(Err(e)) => anyhow::bail!("Inner err! {e:#}"),
+        Err(e) => anyhow::bail!("Outer err! {e:#}"),
+    };
+    if edit_result != edit_content {
+        if let Some(d) = edit_file.parent() {
+            std::fs::create_dir_all(d)?;
+        }
+        std::fs::write(&edit_file, edit_result)?;
+    }
+    Ok(())
 }
 
 fn main() -> anyhow::Result<()> {
     let manifest_path = PathBuf::from(std::env::args().nth(1).expect("Usage: run-template <FILE> {--dry-run | <OUT_DIR> }"));
     let tpl_dir = manifest_path.parent().expect("shouldna passed the root dir");
     let content_dir = tpl_dir.join("content");
+    let is_dry_run = std::env::args().any(|v| v == "--dry-run");
 
     let manifest: Manifest = toml::from_str(&std::fs::read_to_string(&manifest_path).unwrap()).unwrap();
     let file = tpl_dir.join(manifest.template);
@@ -296,13 +331,6 @@ fn main() -> anyhow::Result<()> {
 
     let execution_context = ExecutionContext::new(initial_variables, parser);
 
-    let action_executor: Box<dyn ActionExecutor> = if std::env::args().any(|v| v == "--dry-run") {
-        Box::new(DryRun)
-    } else {
-        let output_dir = PathBuf::from(std::env::args().nth(2).expect("Usage: run-template <FILE> {--dry-run | <OUT_DIR> }"));
-        Box::new(Apply { execution_context: execution_context.clone(), content_dir: content_dir.clone(), output_dir })
-    };
-
     let mut config = wasmtime::Config::new();
     config.wasm_component_model(true);
     let engine = wasmtime::Engine::new(&config).expect("shoulda engined");
@@ -313,13 +341,34 @@ fn main() -> anyhow::Result<()> {
     RunTemplate::add_to_linker(&mut linker, |state: &mut Host| state).expect("shoulda added to linker");
 
     let mut host = Host::new(&content_dir);
-    let execution_context = host.execution_contexts.push(execution_context)?;
+    let execution_context_rsrc = host.execution_contexts.push(execution_context.clone())?;
 
-    let mut store = wasmtime::Store::new(&engine, host);
+    let store = wasmtime::Store::new(&engine, host);
+    let store = Arc::new(RwLock::new(store));
 
-    let (bindings, _instance) = RunTemplate::instantiate(&mut store, &component, &linker).expect("should instantiated");
+    let (bindings, _instance, actions) = {
+        // scope the unlock of the store
+        use std::ops::DerefMut;
+        let mut store = store.write().unwrap();
+        let (bindings, _instance) = RunTemplate::instantiate(store.deref_mut(), &component, &linker).expect("should instantiated");
+        let actions = bindings.fermyon_spin_template_template().call_run(store.deref_mut(), execution_context_rsrc);
+        (bindings, _instance, actions)
+    };
 
-    let actions = match bindings.fermyon_spin_template_template().call_run(store, execution_context) {
+    let action_executor: Box<dyn ActionExecutor> = if is_dry_run {
+        Box::new(DryRun)
+    } else {
+        let output_dir = PathBuf::from(std::env::args().nth(2).expect("Usage: run-template <FILE> {--dry-run | <OUT_DIR> }"));
+        Box::new(Apply {
+            store: store.clone(),
+            guest: bindings,
+            execution_context: execution_context.clone(),
+            content_dir: content_dir.clone(),
+            output_dir
+        })
+    };
+
+    let actions = match actions {
         Ok(Ok(actions)) => actions,
         Ok(Err(exports::fermyon::spin_template::template::Error::Cancel)) => return Ok(()),
         Ok(Err(e)) => return Err(e.into()),
