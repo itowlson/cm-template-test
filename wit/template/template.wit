@@ -5,6 +5,15 @@ interface types {
         cancel,  // I know it's not truly an error but work with me here
         other(string),
     }
+    variant create-mode {
+        create-new,
+        add-to(string),  // path to manifest to add to
+    }
+    record run-options {
+        mode: create-mode,
+        // provided-values: list<tuple<string, string>>, // not needed?  We can respond with these from the UI functions
+        use-default-values: bool, // I don't *think* we can handle this within the UI functions because only the template author knows what the default is
+    }
     resource execution-context {
         set-variable: func(name: string, value: string);
         evaluate-template: func(template: string) -> result<string, error>;
@@ -12,7 +21,7 @@ interface types {
 }
 
 interface template {
-    use types.{error, execution-context};
+    use types.{error, execution-context, run-options};
 
     variant action {
         copy-file-substituted(string),
@@ -28,7 +37,7 @@ interface template {
         apply: func(text: string) -> result<string, error>;
     }
 
-    run: func(context: execution-context) -> result<list<action>, error>;
+    run: func(context: execution-context, options: run-options) -> result<list<action>, error>;
 }
 
 interface ui {

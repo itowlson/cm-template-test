@@ -13,7 +13,11 @@ struct BananaEdit;
 impl Guest for Component {
     type Edit = Box<dyn bindings::exports::fermyon::spin_template::template::GuestEdit>;
 
-    fn run(context: bindings::exports::fermyon::spin_template::template::ExecutionContext) -> Result<Vec<Action>, TemplateError> {
+    fn run(context: bindings::exports::fermyon::spin_template::template::ExecutionContext, options: bindings::exports::fermyon::spin_template::template::RunOptions) -> Result<Vec<Action>, TemplateError> {
+        if !matches!(options.mode, bindings::fermyon::spin_template::types::CreateMode::CreateNew) {
+            return Err(bindings::fermyon::spin_template::types::Error::Other("can only be used to create new projects".to_owned()));
+        }
+
         let mut actions = vec![];
 
         for file in ui::File::list_all() {
