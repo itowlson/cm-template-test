@@ -29,23 +29,24 @@ interface template {
         copy-file-to-raw(tuple<string, string>),
         write-file(tuple<string, string>),
         write-file-binary(tuple<string, list<u8>>),
+        create-dir(string),  // normally auto but in case you need an empty directory a la fileserver
         // edit-file(tuple<string, func(existing: string) -> string>), // no! no! no!
         edit-file(tuple<string, edit>),
     }
 
     resource edit {
-        apply: func(text: string) -> result<string, error>;
+        apply: func(text: string, context: borrow<execution-context>) -> result<string, error>;
     }
 
-    run: func(context: execution-context, options: run-options) -> result<list<action>, error>;
+    run: func(context: borrow<execution-context>, options: run-options) -> result<list<action>, error>;
 }
 
 interface ui {
     use types.{error};
 
-    prompt: func(prompt: string) -> string;
-    confirm: func(prompt: string) -> bool;
-    select: func(prompt: string, items: list<string>) -> u8;
+    prompt: func(prompt: string, default-value: option<string>) -> string;
+    confirm: func(prompt: string, default-value: option<bool>) -> bool;
+    select: func(prompt: string, items: list<string>, default-index: option<u8>) -> u8;
 
     resource file {
         list-all: static func() -> list<file>;

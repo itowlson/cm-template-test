@@ -5,12 +5,14 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0.86"
+clap = { version = "4.5.16", features = ["derive"] }
 dialoguer = "0.11.0"
 heck = "0.5.0"
 liquid = "0.26.4"
 liquid-core = "0.26.4"
 liquid-derive = "0.26.4"
 liquid-lib = "0.26.4"
+regex = "1.10.6"
 serde = { version = "1.0.203", features = ["derive"] }
 toml = "0.8.13"
 walkdir = "2.5.0"

@@ -120,23 +120,35 @@ impl fermyon::spin_template::types::HostExecutionContext for Host {
 }
 
 impl fermyon::spin_template::ui::Host for Host {
-    fn prompt(&mut self, prompt: String) -> Result<String, wasmtime::Error> {
-        match dialoguer::Input::new().with_prompt(&prompt).interact_text() {
+    fn prompt(&mut self, prompt: String, default_value: Option<String>) -> Result<String, wasmtime::Error> {
+        let mut input = dialoguer::Input::new().with_prompt(&prompt).allow_empty(true); // if template doesn't want to allow empty it can circle back
+        if let Some(default_value) = default_value {
+            input = input.default(default_value);
+        }
+        match input.interact_text() {
             Ok(res) => Ok(res),
             Err(e) => exit_with_error(e),
         }
     }
     
-    fn confirm(&mut self, prompt: String) -> Result<bool, wasmtime::Error> {
-        match dialoguer::Confirm::new().with_prompt(&prompt).interact_opt() {
+    fn confirm(&mut self, prompt: String, default_value: Option<bool>) -> Result<bool, wasmtime::Error> {
+        let mut confirm = dialoguer::Confirm::new().with_prompt(&prompt);
+        if let Some(default_value) = default_value {
+            confirm = confirm.default(default_value);
+        }
+        match confirm.interact_opt() {
             Ok(Some(res)) => Ok(res),
             Ok(None) => cancel(),
             Err(e) => exit_with_error(e),
         }
     }
 
-    fn select(&mut self, prompt: String, items: Vec<String>) -> Result<u8, wasmtime::Error> {
-        match dialoguer::Select::new().with_prompt(&prompt).items(&items).interact_opt() {
+    fn select(&mut self, prompt: String, items: Vec<String>, default_index: Option<u8>) -> Result<u8, wasmtime::Error> {
+        let mut select = dialoguer::Select::new().with_prompt(&prompt).items(&items);
+        if let Some(default_index) = default_index {
+            select = select.default(default_index.into());
+        }
+        match select.interact_opt() {
             Ok(Some(res)) => res.try_into().or_else(|_| cancel()),
             Ok(None) => cancel(),
             Err(e) => exit_with_error(e),
@@ -165,12 +177,15 @@ impl fermyon::spin_template::ui::HostFile for Host {
 
     fn read(&mut self, self_: wasmtime::component::Resource<fermyon::spin_template::ui::File>) -> Result<String, fermyon::spin_template::types::Error> {
         let res = self.files.get(&self_).unwrap();
-        Ok(std::fs::read_to_string(&res).unwrap())
+        let path = self.content_root.join(res);
+        //println!("***READING {path:?}");
+        std::fs::read_to_string(&path).map_err(|e| fermyon::spin_template::types::Error::Other(format!("Error reading file {res:?}: {e:?}")))
     }
 
     fn read_binary(&mut self, self_: wasmtime::component::Resource<fermyon::spin_template::ui::File>) -> Result<Vec<u8>, fermyon::spin_template::types::Error> {
         let res = self.files.get(&self_).unwrap();
-        Ok(std::fs::read(&res).unwrap())
+        let path = self.content_root.join(res);
+        std::fs::read(&path).map_err(|e| fermyon::spin_template::types::Error::Other(format!("Error reading file {res:?}: {e:?}")))
     }
 
     fn drop(&mut self, rep: wasmtime::component::Resource<fermyon::spin_template::ui::File>) -> wasmtime::Result<()> {

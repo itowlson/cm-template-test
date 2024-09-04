@@ -1,5 +1,6 @@
 use std::{collections::HashMap, path::PathBuf, sync::{Arc, RwLock}};
 
+use clap::Parser;
 use serde::Deserialize;
 
 mod actions;
@@ -11,14 +12,35 @@ mod host;
 use bindings::{fermyon, exports, RunTemplate};
 use host::{DialogueTrap, ExecutionContext, Host};
 
-fn main() -> anyhow::Result<()> {
-    let manifest_path = PathBuf::from(std::env::args().nth(1).expect("Usage: run-template <FILE> {--dry-run | <OUT_DIR> }"));
-    let tpl_dir = manifest_path.parent().expect("shouldna passed the root dir");
-    let content_dir = tpl_dir.join("content");
-    let is_dry_run = std::env::args().any(|v| v == "--dry-run");
+#[derive(clap::Parser)]
+struct Args {
+    /// The template file e.g. ../sample-template/template/spin-template.toml
+    template_manifest: PathBuf,
 
-    let manifest: Manifest = toml::from_str(&std::fs::read_to_string(&manifest_path).unwrap()).unwrap();
+    /// The name for the item being generated. This will also be used as the
+    /// directory to generate into (for new apps relative to current directory,
+    /// for additions relative to the directory containing `spin.toml`).
+    name: String,
+
+    /// The spin.toml file to add the component to.
+    #[clap(long = "add-to")]
+    add_to: Option<PathBuf>,
+
+    /// Print what would be done but don't do it.
+    #[clap(long = "dry-run")]
+    dry_run: bool,
+}
+
+fn main() -> anyhow::Result<()> {
+    let args = Args::parse();
+
+    let tpl_dir = args.template_manifest.parent().expect("shouldna passed the root dir");
+    let content_dir = tpl_dir.join("content");
+
+    let manifest: Manifest = toml::from_str(&std::fs::read_to_string(&args.template_manifest).unwrap()).unwrap();
     let file = tpl_dir.join(manifest.template);
+
+    let name = safeify(&args.name);
 
     let mut parser_builder = liquid::ParserBuilder::with_stdlib()
         .filter(crate::filters::KebabCaseFilterParser)
@@ -35,7 +57,7 @@ fn main() -> anyhow::Result<()> {
     let parser = parser_builder.build()?;
 
     let initial_variables = [
-        ("project-name", "merlin-the-happy-project"),
+        ("project-name", name.as_str()),
         ("authors", "merlin-the-happy-pig"),
     ].into_iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
 
@@ -52,12 +74,17 @@ fn main() -> anyhow::Result<()> {
 
     let mut host = Host::new(&content_dir);
     let execution_context_rsrc = host.execution_contexts.push(execution_context.clone())?;
+    let execution_context_rsrc_rep = execution_context_rsrc.rep();
 
     let store = wasmtime::Store::new(&engine, host);
     let store = Arc::new(RwLock::new(store));
 
+    let mode = match args.add_to.as_ref() {
+        Some(manifest) => fermyon::spin_template::types::CreateMode::AddTo(manifest.file_name().expect("shoulda had a file name").to_string_lossy().to_string()),
+        None => fermyon::spin_template::types::CreateMode::CreateNew,
+    };
     let options = fermyon::spin_template::types::RunOptions {
-        mode: fermyon::spin_template::types::CreateMode::CreateNew,
+        mode,
         use_default_values: false,
     };
 
@@ -65,16 +92,22 @@ fn main() -> anyhow::Result<()> {
         // scope the unlock of the store
         use std::ops::DerefMut;
         let mut store = store.write().unwrap();
-        let (bindings, _instance) = RunTemplate::instantiate(store.deref_mut(), &component, &linker).expect("should instantiated");
+        let (bindings, _instance) = RunTemplate::instantiate(store.deref_mut(), &component, &linker).expect("shoulda instantiated");
         let actions = bindings.fermyon_spin_template_template().call_run(store.deref_mut(), execution_context_rsrc, &options);
         (bindings, _instance, actions)
     };
 
-    let action_executor = if is_dry_run {
+    let action_executor = if args.dry_run {
         actions::dry_run()
     } else {
-        let output_dir = PathBuf::from(std::env::args().nth(2).expect("Usage: run-template <FILE> {--dry-run | <OUT_DIR> }"));
-        actions::apply(&store, bindings, &execution_context, &content_dir, &output_dir)
+        let output_dir = PathBuf::from(&name);
+        let existing_app_dir = args.add_to.map(|f| f.parent().expect("stop passing the root directory, I have warned you before").to_owned());
+        let (output_dir, edit_dir_base) = match &existing_app_dir {
+            None => (output_dir.clone(), output_dir),
+            Some(ead) => (ead.join(output_dir), ead.to_owned()),
+        };
+        // println!("***EXISTING APP DIR {existing_app_dir:?}, OUTPUT DIR {output_dir:?}, EDIT DIR {edit_dir_base:?}");
+        actions::apply(&store, bindings, &execution_context, execution_context_rsrc_rep, &content_dir, &output_dir, &edit_dir_base)
     };
 
     let actions = match actions {
@@ -101,4 +134,10 @@ struct Manifest {
     template: String,
     #[serde(default)]
     filter: HashMap<String, PathBuf>,
+}
+
+fn safeify(text: &str) -> String {
+    let unsafe_chars = regex::Regex::new("[^-_.a-zA-Z0-9]").expect("invalid safety regex");
+    let s = unsafe_chars.replace_all(text, "-");
+    s.to_string()
 }
