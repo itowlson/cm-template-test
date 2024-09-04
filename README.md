@@ -11,6 +11,12 @@ To try this out, compile as follows:
 * `sample-template`: `cargo component build --release --target wasm32-unknown-unknown`
 * `run-template`: `cargo run -- ../sample-template/template/spin-template.toml OUTPUT` (or `--dry-run`)
 
+Notes:
+
+* The `--add-to` option currently _requires_ the `spin.toml` file e.g. `--add-to testapp/spin.toml`.
+  This isn't intended as a real user experience, it's just to save writing UX code that would get
+  thrown away.
+
 Some questions:
 
 * The current implementation does not provide access to the `wasi:cli` world. The idea of
