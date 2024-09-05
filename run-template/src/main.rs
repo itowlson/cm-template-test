@@ -29,6 +29,10 @@ struct Args {
     /// Print what would be done but don't do it.
     #[clap(long = "dry-run")]
     dry_run: bool,
+
+    /// Accept defaults where available.
+    #[clap(long = "accept-defaults", short = 'a')]
+    accept_defaults: bool,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -72,7 +76,7 @@ fn main() -> anyhow::Result<()> {
     let mut linker = wasmtime::component::Linker::new(&engine);
     RunTemplate::add_to_linker(&mut linker, |state: &mut Host| state).expect("shoulda added to linker");
 
-    let mut host = Host::new(&content_dir);
+    let mut host = Host::new(&content_dir, args.accept_defaults);
     let execution_context_rsrc = host.execution_contexts.push(execution_context.clone())?;
     let execution_context_rsrc_rep = execution_context_rsrc.rep();
 

@@ -40,7 +40,12 @@ impl Guest for Component {
             actions.push(action);
         };
 
-        let http_path = ui::prompt("HTTP route", Some("/..."));
+        let default_path = if is_add {
+            None
+        } else {
+            Some("/...")
+        };
+        let http_path = ui::prompt("HTTP route", default_path);
         let desc = ui::prompt("Description", Some(""));
 
         context.set_variable("project-description", &desc);

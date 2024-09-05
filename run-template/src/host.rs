@@ -4,6 +4,7 @@ use crate::bindings::fermyon;
 
 pub struct Host {
     content_root: PathBuf,
+    accept_defaults: bool,
     files: wasmtime::component::ResourceTable,
     pub(crate) execution_contexts: wasmtime::component::ResourceTable,
 }
@@ -41,9 +42,10 @@ impl std::fmt::Display for DialogueTrap {
 }
 
 impl Host {
-    pub fn new(root_dir: impl AsRef<Path>) -> Self {
+    pub fn new(root_dir: impl AsRef<Path>, accept_defaults: bool) -> Self {
         Self {
             content_root: root_dir.as_ref().to_owned(),
+            accept_defaults,
             files: wasmtime::component::ResourceTable::new(),
             execution_contexts: wasmtime::component::ResourceTable::new(),
         }
@@ -121,6 +123,11 @@ impl fermyon::spin_template::types::HostExecutionContext for Host {
 
 impl fermyon::spin_template::ui::Host for Host {
     fn prompt(&mut self, prompt: String, default_value: Option<String>) -> Result<String, wasmtime::Error> {
+        if self.accept_defaults {
+            if let Some(d) = default_value {
+                return Ok(d);
+            }
+        }
         let mut input = dialoguer::Input::new().with_prompt(&prompt).allow_empty(true); // if template doesn't want to allow empty it can circle back
         if let Some(default_value) = default_value {
             input = input.default(default_value);
