@@ -9,7 +9,8 @@ To try this out, compile as follows:
 * `sample-filter`: `cargo component build --release --target wasm32-unknown-unknown`
   then copy to `sample-template/filters`
 * `sample-template`: `cargo component build --release --target wasm32-unknown-unknown`
-* `run-template`: `cargo run -- ../sample-template/template/spin-template.toml OUTPUT` (or `--dry-run`)
+* `http-rust`: `cargo component build --release --target wasm32-unknown-unknown`
+* `run-template`: `cargo run -- ../http-rust/template/spin-template.toml testapp` (and optionally `--dry-run`)
 
 Notes:
 

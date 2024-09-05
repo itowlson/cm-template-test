@@ -1,0 +1,29 @@
+[package]
+name = "template-http-rust"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+toml_edit = "0.22.20"
+wit-bindgen-rt = { version = "0.25.0", features = ["bitflags"] }
+
+[lib]
+crate-type = ["cdylib"]
+
+[profile.release]
+codegen-units = 1
+opt-level = "s"
+debug = false
+strip = true
+lto = true
+
+[package.metadata.component.dependencies]
+
+[package.metadata.component.registries]
+default = "https://registrytest-vfztdiyy.fermyon.app"
+
+[package.metadata.component.target]
+path = "../wit/template"
+# package = "fermyon:spin-template"
+# version = "0.0.1"
+# world = "fermyon:spin-template/run-template@0.0.1"

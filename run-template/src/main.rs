@@ -58,7 +58,7 @@ fn main() -> anyhow::Result<()> {
 
     let initial_variables = [
         ("project-name", name.as_str()),
-        ("authors", "merlin-the-happy-pig"),
+        ("authors", "merlin-the-happy-pig"),  // This would come from the git environment etc.
     ].into_iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
 
     let execution_context = ExecutionContext::new(initial_variables, parser);
@@ -104,7 +104,14 @@ fn main() -> anyhow::Result<()> {
         let existing_app_dir = args.add_to.map(|f| f.parent().expect("stop passing the root directory, I have warned you before").to_owned());
         let (output_dir, edit_dir_base) = match &existing_app_dir {
             None => (output_dir.clone(), output_dir),
-            Some(ead) => (ead.join(output_dir), ead.to_owned()),
+            Some(ead) => {
+                let outdir = if manifest.create_own_subdirs_for_add {
+                    ead.to_owned()
+                } else {
+                    ead.join(output_dir)
+                };
+                (outdir, ead.to_owned())
+            }
         };
         // println!("***EXISTING APP DIR {existing_app_dir:?}, OUTPUT DIR {output_dir:?}, EDIT DIR {edit_dir_base:?}");
         actions::apply(&store, bindings, &execution_context, execution_context_rsrc_rep, &content_dir, &output_dir, &edit_dir_base)
@@ -132,6 +139,8 @@ fn main() -> anyhow::Result<()> {
 #[derive(Deserialize)]
 struct Manifest {
     template: String,
+    #[serde(default)]
+    create_own_subdirs_for_add: bool,
     #[serde(default)]
     filter: HashMap<String, PathBuf>,
 }

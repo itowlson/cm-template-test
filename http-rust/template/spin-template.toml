@@ -1,0 +1,2 @@
+template = "../target/wasm32-unknown-unknown/release/template_http_rust.wasm"
+create_own_subdirs_for_add = true
