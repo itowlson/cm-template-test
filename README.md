@@ -18,6 +18,19 @@ Notes:
   This isn't intended as a real user experience, it's just to save writing UX code that would get
   thrown away.
 
+Thoughts:
+
+* A specific "insert into manifest" action (or actions) would probably work out nicer than
+  the current "generic edit, hope you like parsing TOML" approach.
+  * Although this creates a weird effect where the first trigger/component gets created
+    by text substitution and then the rest get added by specification.  Which feels weird.
+    You don't want to have to encode the same information two different ways.
+  * Unless we make this kinda the standard way to edit a manifest, and have create mode
+    as "init empty manifest" followed by the add-style "insert these items."
+* Maybe a "trace" API which is off by default but can be turned on for template debugging?
+  Alternatively (and this is back to the WASI question) enable `wasi:cli/stdout` but
+  virt it out by default. (Or maybe templates should be allowed to print arbitrary messages?)
+
 Some questions:
 
 * The current implementation does not provide access to the `wasi:cli` world. The idea of
